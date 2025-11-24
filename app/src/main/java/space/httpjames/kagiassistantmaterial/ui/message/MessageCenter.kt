@@ -29,6 +29,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +70,17 @@ fun MessageCenter(
             .padding(bottom = 16.dp)
             .fillMaxWidth()
     ) {
+        if (state.attachmentUris.isNotEmpty()) {
+            Row(
+                modifier = Modifier.padding(8.dp)
+            ) {
+                state.attachmentUris.forEach { uri ->
+                    key(uri) {
+                        AttachmentPreview(uri = uri, onRemove = { uri -> state.removeAttachmentUri(uri) })
+                    }
+                }
+            }
+        }
         TextField(
             value = state.text,
             onValueChange = { state.onTextChanged(it) },
@@ -175,6 +187,6 @@ fun MessageCenter(
     }
 
     if (state.showAttachmentBottomSheet) {
-        AttachmentBottomSheet(onDismissRequest = { state.onDismissAttachmentBottomSheet() })
+        AttachmentBottomSheet(onDismissRequest = { state.onDismissAttachmentBottomSheet() }, onAttachment = { state.addAttachmentUri(it) })
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -86,6 +87,17 @@ class MessageCenterState(
 
     var showAttachmentBottomSheet by mutableStateOf(false)
         private set
+
+    var attachmentUris by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    fun addAttachmentUri(uri: String) {
+        attachmentUris = attachmentUris + uri
+    }
+
+    fun removeAttachmentUri(uri: String) {
+        attachmentUris = attachmentUris - uri
+    }
 
 
     init {

@@ -1,5 +1,11 @@
 package space.httpjames.kagiassistantmaterial.ui.message
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,14 +28,20 @@ import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttachmentBottomSheet(
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    onAttachment: (uri: String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = false,
@@ -44,16 +56,12 @@ fun AttachmentBottomSheet(
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                FilledIconButton(onClick = { /* Handle camera icon click */ }, modifier = Modifier.size(64.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.CameraAlt,
-                        contentDescription = "Camera"
-                    )
+            AttachCameraButton(
+                onSnap = {
+                    onAttachment(it)
+                    onDismissRequest()
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("Camera")
-            }
+            )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 FilledIconButton(onClick = { /* Handle camera icon click */ }, modifier = Modifier.size(64.dp)) {
                     Icon(
@@ -77,3 +85,39 @@ fun AttachmentBottomSheet(
         }
     }
 }
+
+@Composable
+fun AttachCameraButton(
+    onSnap: (photoUri: String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val photoUri = remember { createTempImageUri(context) }
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+//            capturedBitmap.value = MediaStore.Images.Media.getBitmap(context.contentResolver, photoUri)
+            onSnap(photoUri.toString())
+        }
+    }
+
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FilledIconButton(onClick = {
+            launcher.launch(photoUri)
+        }, modifier = Modifier.size(64.dp)) {
+            Icon(
+                imageVector = Icons.Filled.CameraAlt,
+                contentDescription = "Camera"
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("Camera")
+    }
+}
+
+private fun createTempImageUri(context: Context): Uri =
+    FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.provider",
+        File(context.cacheDir, "temp_${System.currentTimeMillis()}.webp")
+    )
