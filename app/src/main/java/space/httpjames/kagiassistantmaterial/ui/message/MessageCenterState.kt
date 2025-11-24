@@ -37,6 +37,7 @@ import space.httpjames.kagiassistantmaterial.ui.main.parseReferencesHtml
 import java.io.File
 import java.util.UUID
 import android.media.ThumbnailUtils
+import android.provider.OpenableColumns
 import android.util.Size
 import java.io.FileOutputStream
 
@@ -281,7 +282,7 @@ class MessageCenterState(
                     val text = obj["reply"]?.jsonPrimitive?.contentOrNull ?: ""
                     val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: ""
                     val citations = obj["references_html"]?.jsonPrimitive?.contentOrNull ?: ""
-                    
+
                     inProgressAssistantMessageId = id
                     messageId = id
 
@@ -330,15 +331,17 @@ class MessageCenterState(
 
                 for (uri in attachmentUris) {
                     val uri = Uri.parse(uri)
+                    mimeTypes += context.contentResolver.getType(uri) ?: "application/octet-stream"
+
+                    val fileName = context.getFileName(uri) ?: "Unknown"
 
                     // 1. copy content to a temp file
-                    val file = uri.copyToTempFile(context)
+                    val file = uri.copyToTempFile(context, "."+fileName.substringAfterLast("."))
 
                     files += file
                     thumbnails += if (uri.toString().endsWith(".webp") || uri.toString().endsWith(".jpg")) {
                         file.to84x84ThumbFile()
                     } else null
-                    mimeTypes += context.contentResolver.getType(uri) ?: "application/octet-stream"
                 }
 
                 assistantClient.sendMultipartRequest(
@@ -378,12 +381,25 @@ fun File.to84x84ThumbFile(): File {
 }
 
 
-private fun Uri.copyToTempFile(context: Context): File {
-    val temp = File.createTempFile("attach_", ".webp", context.cacheDir)
+private fun Uri.copyToTempFile(context: Context, ext: String): File {
+    val temp = File.createTempFile("attach_", ext, context.cacheDir)
     context.contentResolver.openInputStream(this).use { ins ->
         temp.outputStream().use { outs ->
             ins?.copyTo(outs)
         }
     }
     return temp
+}
+
+fun Context.getFileName(uri: Uri): String? {
+    val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+
+    contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex != -1 && cursor.moveToFirst()) {
+            return cursor.getString(nameIndex)
+        }
+    }
+
+    return null
 }
