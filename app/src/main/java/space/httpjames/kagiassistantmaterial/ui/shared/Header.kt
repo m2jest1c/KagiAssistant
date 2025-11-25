@@ -55,7 +55,7 @@ fun Header(threadTitle: String?, onMenuClick: () -> Unit, onNewChatClick: () -> 
             }
         },
         actions = {
-            IconButton(onClick = onNewChatClick) {
+            IconButton(onClick = onNewChatClick, enabled = threadTitle != null) {
                 Icon(Icons.Outlined.Add, contentDescription = "New Chat")
             }
         }
