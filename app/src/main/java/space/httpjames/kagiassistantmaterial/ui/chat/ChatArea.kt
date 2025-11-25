@@ -33,6 +33,7 @@ fun ChatArea(
     assistantClient: AssistantClient,
     modifier: Modifier = Modifier,
     isLoading: Boolean,
+    currentThreadId: String?,
     threadMessages: List<AssistantThreadMessage>,
 ) {
     val scrollState = rememberScrollState()
@@ -93,7 +94,7 @@ fun ChatArea(
     }
 
 
-    LaunchedEffect(threadMessages) {
+    LaunchedEffect(currentThreadId, ) {
         if (threadMessages.isNotEmpty()) {
             awaitFrame()
             scrollState.scrollTo(scrollState.maxValue)

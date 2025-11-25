@@ -58,7 +58,7 @@ fun LandingScreen(onLoginSuccess: (String) -> Unit = {}) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color.White
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier

@@ -13,12 +13,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -31,8 +34,10 @@ fun HtmlCard(
     modifier: Modifier = Modifier,
     minHeight: Int = MIN_WEBVIEW_HEIGHT,
 ) {
-    val isLoading = remember { mutableStateOf(true) }
-    val heightState = remember { mutableIntStateOf(minHeight) }
+    var isLoading by remember { mutableStateOf(true) }
+    var heightState by remember { mutableIntStateOf(minHeight) }
+
+    val context = LocalContext.current
 
     Card(
         modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp),
@@ -45,7 +50,7 @@ fun HtmlCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(heightState.value.dp),
+                .height(heightState.dp),
             contentAlignment = Alignment.Center,
         ) {
 //            if (isLoading.value) {
@@ -63,8 +68,8 @@ fun HtmlCard(
                             HtmlViewerJavaScriptInterface(
                                 expectedMin =  minHeight,
                                 onHeightMeasured = { h ->
-                                    heightState.value = h
-                                    isLoading.value = false
+                                    heightState = h
+                                    isLoading = false
                                 }
 
                             ),
@@ -88,10 +93,14 @@ fun HtmlCard(
                     }
                 },
                 update = { webView ->
-                    val night = true
-                    val cssScheme = if (night) "dark" else "light"
-                    val styledHtml = wrapHtmlWithStyles(html, cssScheme)
-                    webView.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                    // Only reload if html content changed
+                    if (webView.url != "about:blank") {  // Skip first load
+                        val night = (context.resources.configuration.uiMode and
+                                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                        val cssScheme = if (night) "dark" else "light"
+                        val styledHtml = wrapHtmlWithStyles(html, cssScheme)
+                        webView.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1020,30 +1029,45 @@ table td {
         <body>
             $html
             <script>
+                let lastHeight = 0;
+
                 const updateHeight = () => {
                     const newHeight = Math.ceil(document.body.scrollHeight);
-                    window.HtmlViewer.resize(newHeight);
+                    // Only notify if height changed significantly (avoid micro-updates)
+                    if (Math.abs(newHeight - lastHeight) > 50) {
+                        lastHeight = newHeight;
+                        window.HtmlViewer.resize(newHeight);
+                    }
                 };
 
+                // Only measure on load, NOT on mutations
+                window.addEventListener('load', updateHeight);
+
+                // Longer debounce for any other changes
                 let debounceTimeout;
                 const debouncedUpdateHeight = () => {
                     clearTimeout(debounceTimeout);
-                    debounceTimeout = setTimeout(updateHeight, 150); // Debounce to avoid rapid updates
+                    debounceTimeout = setTimeout(updateHeight, 500);
                 };
 
-                // Update height on various events
-                window.addEventListener('load', debouncedUpdateHeight);
-                
-                // Observe content changes
-                const observer = new MutationObserver(debouncedUpdateHeight);
-                observer.observe(document.body, {
-                    attributes: true,
+                // Minimal observer - only watch image loads, not all mutations
+                const imageObserver = new MutationObserver((mutations) => {
+                    const hasImages = mutations.some(m => {
+                        return m.addedNodes.length > 0 && 
+                               Array.from(m.addedNodes).some(n => n.tagName === 'IMG');
+                    });
+                    if (hasImages) {
+                        debouncedUpdateHeight();
+                    }
+                });
+
+                imageObserver.observe(document.body, {
                     childList: true,
                     subtree: true,
                 });
 
-                // Initial update
-                debouncedUpdateHeight();
+                // Initial update after a small delay
+                setTimeout(updateHeight, 100);
             </script>
         </body>
         </html>
@@ -1054,11 +1078,16 @@ private class HtmlViewerJavaScriptInterface(
     private val expectedMin: Int,
     private val onHeightMeasured: (Int) -> Unit
 ) {
+    private var lastHeight = 0
+
     @android.webkit.JavascriptInterface
     fun resize(height: Int) {
-        println("resizing")
-        val safeHeight = height.coerceAtLeast(expectedMin)
-        onHeightMeasured(safeHeight)
+        // Only call if height actually changed
+        if (height != lastHeight) {
+            println("resizing to $height")
+            lastHeight = height
+            val safeHeight = height.coerceAtLeast(expectedMin)
+            onHeightMeasured(safeHeight)
+        }
     }
-
 }
