@@ -107,8 +107,10 @@ fun MessageCenter(
             placeholder = { Text("Ask Assistant") },
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false),
-            maxLines = 6,
+                .weight(1f, fill = false)
+                .animateContentSize(),
+            maxLines = 16,
+            minLines = 1,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent,

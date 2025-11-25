@@ -106,6 +106,9 @@ class MessageCenterState(
     var showAttachmentSizeLimitWarning by mutableStateOf(false)
         private set
 
+    var expanded by mutableStateOf(true)
+        private set
+
     fun addAttachmentUri(uri: String) {
         val totalSize = attachmentUris.sumOf { getFileSize(Uri.parse(it)) }
         val newUriSize = getFileSize(Uri.parse(uri))
