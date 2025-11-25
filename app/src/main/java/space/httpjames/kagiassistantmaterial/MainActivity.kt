@@ -45,16 +45,15 @@ class MainActivity : ComponentActivity() {
             var sessionToken by remember { mutableStateOf(prefs.getString("session_token", null)) }
 
             KagiAssistantTheme {
-                LandingScreen() {}
-//                if (sessionToken != null) {
-//                    val assistantClient = AssistantClient(sessionToken!!)
-//                    MainScreen(assistantClient = assistantClient)
-//                } else {
-//                    LandingScreen(onLoginSuccess = {
-//                        prefs.edit().putString("session_token", it).apply()
-//                        sessionToken = it
-//                    })
-//                }
+                if (sessionToken != null) {
+                    val assistantClient = AssistantClient(sessionToken!!)
+                    MainScreen(assistantClient = assistantClient)
+                } else {
+                    LandingScreen(onLoginSuccess = {
+                        prefs.edit().putString("session_token", it).apply()
+                        sessionToken = it
+                    })
+                }
             }
         }
     }
