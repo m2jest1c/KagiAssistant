@@ -261,7 +261,7 @@ class MessageCenterState(
             val focus = KagiPromptRequestFocus(
                 threadId,
                 latestAssistantMessageId,
-                getText(),
+                getText().trim(),
                 branchId,
             )
 
