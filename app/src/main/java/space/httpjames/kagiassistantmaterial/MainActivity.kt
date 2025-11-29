@@ -48,7 +48,6 @@ class MainActivity : ComponentActivity() {
                 NavHost(
                     navController = navController,
                     startDestination = if (sessionToken != null) "main" else "landing"
-//                    startDestination = "settings"
                 ) {
                     composable("landing") {
                         LandingScreen(onLoginSuccess = {
@@ -64,7 +63,10 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("settings") {
                         val assistantClient = AssistantClient(sessionToken!!)
-                        SettingsScreen(assistantClient = assistantClient)
+                        SettingsScreen(
+                            assistantClient = assistantClient,
+                            navController = navController
+                        )
                     }
                 }
             }
