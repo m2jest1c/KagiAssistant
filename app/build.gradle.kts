@@ -50,6 +50,7 @@ dependencies {
     implementation("com.squareup.moshi:moshi:1.15.1")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.compose.foundation.layout)
     ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     implementation("androidx.compose.ui:ui-viewbinding:1.6.0")
