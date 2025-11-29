@@ -13,11 +13,12 @@ import kotlinx.coroutines.withContext
 import space.httpjames.kagiassistantmaterial.AssistantClient
 
 @Composable
-fun rememberSettingsScreenState(
-    assistantClient: AssistantClient
-): SettingsScreenState {
-    val prefs = LocalContext.current.getSharedPreferences("assistant_prefs", Context.MODE_PRIVATE)
-    return remember(prefs, assistantClient) {
+fun rememberSettingsScreenState(assistantClient: AssistantClient): SettingsScreenState {
+    val context = LocalContext.current
+    val prefs = remember(context) {
+        context.getSharedPreferences("assistant_prefs", Context.MODE_PRIVATE)
+    }
+    return remember(prefs) {
         SettingsScreenState(prefs, assistantClient)
     }
 }
