@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("main") {
                         val assistantClient = AssistantClient(sessionToken!!)
-                        MainScreen(assistantClient = assistantClient)
+                        MainScreen(assistantClient = assistantClient, navController = navController)
                     }
                     composable("settings") {
                         val assistantClient = AssistantClient(sessionToken!!)
