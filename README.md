@@ -9,9 +9,9 @@ Native Material You Android app for Kagi Assistant.
 
 ## Screenshots
 
-|  ![Onboarding](./docs/screenies/onboarding.webp)   | ![Chat No Sources](./docs/screenies/1000015800.webp) |          ![Chat With Sources](./docs/screenies/1000015801.webp)           |
-|:--------------------------------------------------:|:----------------------------------------------------:|:-------------------------------------------------------------------------:|
-| ![Sources Sheet](./docs/screenies/1000015802.webp) |  ![Models Sheet](./docs/screenies/1000015799.webp)   | ![Set default digital assistant](./docs/screenies/default_assistant.webp) |
+| <img src="./docs/screenies/onboarding.webp" width="250"> | <img src="./docs/screenies/1000015800.webp" width="250"> | <img src="./docs/screenies/1000015801.webp" width="250">        |
+|----------------------------------------------------------|----------------------------------------------------------|-----------------------------------------------------------------|
+| <img src="./docs/screenies/1000015802.webp" width="250"> | <img src="./docs/screenies/1000015799.webp" width="250"> | <img src="./docs/screenies/default_assistant.webp" width="250"> |
 
 ## Installation
 
