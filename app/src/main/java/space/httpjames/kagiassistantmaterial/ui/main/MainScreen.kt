@@ -75,7 +75,10 @@ fun MainScreen(
                 },
                 isLoading = state.threadsLoading,
                 onSettingsClick = {
-                    navController.navigate("settings")
+                    scope.launch {
+                        navController.navigate("settings")
+                        drawerState.close()
+                    }
                 }
             )
         }) {
