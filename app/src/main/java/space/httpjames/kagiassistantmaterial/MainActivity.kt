@@ -1,15 +1,10 @@
 package space.httpjames.kagiassistantmaterial
 
-import android.content.Context
 import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.compose.NavHost
@@ -17,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import space.httpjames.kagiassistantmaterial.ui.landing.LandingScreen
 import space.httpjames.kagiassistantmaterial.ui.main.MainScreen
+import space.httpjames.kagiassistantmaterial.ui.settings.SettingsScreen
 import space.httpjames.kagiassistantmaterial.ui.theme.KagiAssistantTheme
 
 class MainActivity : ComponentActivity() {
@@ -42,7 +38,7 @@ class MainActivity : ComponentActivity() {
             insets
         }
 
-        val prefs = getSharedPreferences("assistant_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("assistant_prefs", MODE_PRIVATE)
 
         setContent {
             KagiAssistantTheme {
@@ -52,6 +48,7 @@ class MainActivity : ComponentActivity() {
                 NavHost(
                     navController = navController,
                     startDestination = if (sessionToken != null) "main" else "landing"
+//                    startDestination = "settings"
                 ) {
                     composable("landing") {
                         LandingScreen(onLoginSuccess = {
@@ -64,6 +61,10 @@ class MainActivity : ComponentActivity() {
                     composable("main") {
                         val assistantClient = AssistantClient(sessionToken!!)
                         MainScreen(assistantClient = assistantClient)
+                    }
+                    composable("settings") {
+                        val assistantClient = AssistantClient(sessionToken!!)
+                        SettingsScreen(assistantClient = assistantClient)
                     }
                 }
             }
