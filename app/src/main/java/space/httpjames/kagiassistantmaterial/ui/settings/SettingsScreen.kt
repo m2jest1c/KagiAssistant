@@ -199,7 +199,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = Icons.Default.Logout,
                     title = "Sign out",
-                    subtitle = "Sign out of your Kagi account on this device only",
+                    subtitle = "Sign out on this device only",
                     pos = SettingsItemPosition.SINGLE,
                     iconBackgroundColor = MaterialTheme.colorScheme.errorContainer,
                     iconTint = MaterialTheme.colorScheme.onErrorContainer,
