@@ -9,6 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Headers
@@ -23,6 +29,9 @@ import okhttp3.Response
 import okio.BufferedSource
 import okio.IOException
 import org.jsoup.Jsoup
+import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
+import space.httpjames.kagiassistantmaterial.ui.message.toObject
+import space.httpjames.kagiassistantmaterial.utils.JsonLenient
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -64,6 +73,29 @@ data class AssistantThreadMessageDocument(
     val mime: String,
     val data: Bitmap?,
 )
+
+@Serializable
+data class MessageDto(
+    val id: String,
+    val prompt: String = "",
+    val reply: String = "",
+    val documents: List<DocumentDto> = emptyList(),
+    val branch_list: List<String> = emptyList(),
+    val references_html: String = "",
+    val md: String? = null,
+    val metadata: String = ""
+)
+
+@Serializable
+data class DocumentDto(
+    val id: String,
+    val name: String,
+    val mime: String,
+    val data: String? = null
+)
+
+inline fun <reified T> JsonElement.toObject(): T =
+    JsonLenient.decodeFromJsonElement<T>(this)
 
 @JsonClass(generateAdapter = true)
 data class KagiPromptRequest(
@@ -109,7 +141,7 @@ data class QrRemoteSessionDetails(
 )
 
 class AssistantClient(
-    private val sessionToken: String,
+    sessionToken: String,
 ) {
     private val baseHeaders = Headers.Builder()
         .add("origin", "https://kagi.com")
@@ -222,6 +254,34 @@ class AssistantClient(
             val body = response.body?.string() ?: return false
             return "custom_instructions_input" in body
         }
+    }
+
+    suspend fun getProfiles(): List<AssistantProfile> = withContext(Dispatchers.IO) {
+        val streamId = UUID.randomUUID().toString()
+
+        val profiles = mutableListOf<AssistantProfile>()
+
+        fetchStream(
+            streamId = streamId,
+            url = "https://kagi.com/assistant/profile_list",
+            method = "POST",
+            body = "{}",
+            extraHeaders = mapOf("Content-Type" to "application/json")
+        ) { chunk ->
+            if (chunk.header == "profiles.json") {
+                val parsed = Json.parseToJsonElement(chunk.data)
+                    .jsonObject["profiles"]?.jsonArray
+                    ?.map { it.toObject<AssistantProfile>() }
+                    .orEmpty()
+
+                val (kagi, other) = parsed.partition {
+                    it.family.equals("kagi", ignoreCase = true)
+                }
+                profiles += kagi + other
+            }
+        }
+
+        profiles
     }
 
     suspend fun getThreads(): Map<String, List<AssistantThread>> {

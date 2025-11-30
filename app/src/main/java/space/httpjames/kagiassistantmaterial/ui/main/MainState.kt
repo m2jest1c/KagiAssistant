@@ -16,8 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jsoup.Jsoup
@@ -27,7 +25,10 @@ import space.httpjames.kagiassistantmaterial.AssistantThreadMessage
 import space.httpjames.kagiassistantmaterial.AssistantThreadMessageDocument
 import space.httpjames.kagiassistantmaterial.AssistantThreadMessageRole
 import space.httpjames.kagiassistantmaterial.Citation
+import space.httpjames.kagiassistantmaterial.MessageDto
 import space.httpjames.kagiassistantmaterial.parseMetadata
+import space.httpjames.kagiassistantmaterial.toObject
+import space.httpjames.kagiassistantmaterial.utils.DataFetchingState
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -45,13 +46,13 @@ class MainState(
     val drawerState: DrawerState,
     val coroutineScope: CoroutineScope
 ) {
-    var threadsLoading by mutableStateOf(false)
+    var threadsCallState by mutableStateOf<DataFetchingState>(DataFetchingState.FETCHING)
         private set
     var threads by mutableStateOf<Map<String, List<AssistantThread>>>(emptyMap())
         private set
     var currentThreadId by mutableStateOf<String?>(null)
         private set
-    var threadMessagesLoading by mutableStateOf(false)
+    var threadMessagesCallState by mutableStateOf<DataFetchingState>(DataFetchingState.OK)
         private set
     var threadMessages by mutableStateOf<List<AssistantThreadMessage>>(emptyList())
     var currentThreadTitle by mutableStateOf<String?>(null)
@@ -91,11 +92,17 @@ class MainState(
     }
 
     fun fetchThreads() {
-        threadsLoading = true
         coroutineScope.launch {
             withContext(Dispatchers.IO) {
-                threads = assistantClient.getThreads()
-                threadsLoading = false
+                try {
+                    threadsCallState = DataFetchingState.FETCHING
+                    threads = assistantClient.getThreads()
+                    threadsCallState = DataFetchingState.OK
+                } catch (e: Exception) {
+                    println("Error fetching threads: ${e.message}")
+                    e.printStackTrace()
+                    threadsCallState = DataFetchingState.ERRORED
+                }
             }
         }
     }
@@ -119,7 +126,7 @@ class MainState(
         currentThreadTitle = null
         coroutineScope.launch {
             try {
-                threadMessagesLoading = true
+                threadMessagesCallState = DataFetchingState.FETCHING
                 assistantClient.fetchStream(
                     streamId = "8ce77b1b-35c5-4262-8821-af3b33d1cf0f",
                     url = "https://kagi.com/assistant/thread_open",
@@ -133,78 +140,49 @@ class MainState(
                         }
 
                         if (chunk.header == "messages.json") {
-                            val messages = Json.parseToJsonElement(chunk.data)
+                            val dtoList =
+                                Json.parseToJsonElement(chunk.data).toObject<List<MessageDto>>()
 
-                            threadMessages = emptyList()
-
-                            for (message in messages.jsonArray) {
-                                val obj = message.jsonObject
-                                val parsedDocuments =
-                                    mutableListOf<AssistantThreadMessageDocument>()
-
-                                val documents = obj["documents"]?.jsonArray ?: emptyList()
-
-                                for (document in documents) {
-                                    val obj = document.jsonObject
-
-                                    val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    var data: Bitmap? = null
-                                    val b64 = obj["data"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    if (mime.startsWith("image") && b64.isNotEmpty()) {
-                                        b64.decodeDataUriToBitmap().also { data = it }
-                                    }
-
-                                    parsedDocuments += AssistantThreadMessageDocument(
-                                        obj["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                                        obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                                        mime,
-                                        data,
+                            threadMessages = dtoList.flatMap { dto ->
+                                val docs = dto.documents.map { d ->
+                                    AssistantThreadMessageDocument(
+                                        id = d.id,
+                                        name = d.name,
+                                        mime = d.mime,
+                                        data = if (d.mime.startsWith("image")) d.data?.decodeDataUriToBitmap() else null
                                     )
                                 }
 
-                                val branchList = obj["branch_list"]?.jsonArray
-                                val branchListStrings =
-                                    branchList?.map { it.jsonPrimitive.content } ?: emptyList()
+                                val citations = parseReferencesHtml(dto.references_html)
 
-                                val md = obj["md"]?.jsonPrimitive?.contentOrNull
-                                val metadata = obj["metadata"]?.jsonPrimitive?.contentOrNull ?: ""
-
-
-                                threadMessages += AssistantThreadMessage(
-                                    obj["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                                    obj["prompt"]?.jsonPrimitive?.contentOrNull ?: "",
-                                    AssistantThreadMessageRole.USER,
-                                    emptyList(),
-                                    parsedDocuments,
-                                    branchListStrings,
-                                    true,
-                                    null,
-                                    emptyMap(),
-                                )
-                                val citations = parseReferencesHtml(
-                                    obj["references_html"]?.jsonPrimitive?.contentOrNull ?: ""
-                                )
-                                println(citations)
-                                threadMessages += AssistantThreadMessage(
-                                    (obj["id"]?.jsonPrimitive?.contentOrNull ?: "") + ".reply",
-                                    obj["reply"]?.jsonPrimitive?.contentOrNull ?: "",
-                                    AssistantThreadMessageRole.ASSISTANT,
-                                    citations,
-                                    emptyList(),
-                                    branchListStrings,
-                                    true,
-                                    md,
-                                    parseMetadata(metadata)
+                                listOf(
+                                    AssistantThreadMessage(
+                                        id = dto.id,
+                                        content = dto.prompt,
+                                        role = AssistantThreadMessageRole.USER,
+                                        documents = docs,
+                                        branchIds = dto.branch_list,
+                                        finishedGenerating = true
+                                    ),
+                                    AssistantThreadMessage(
+                                        id = "${dto.id}.reply",
+                                        content = dto.reply,
+                                        role = AssistantThreadMessageRole.ASSISTANT,
+                                        citations = citations,
+                                        branchIds = dto.branch_list,
+                                        finishedGenerating = true,
+                                        markdownContent = dto.md,
+                                        metadata = parseMetadata(dto.metadata)
+                                    )
                                 )
                             }
-
-                            threadMessagesLoading = false
+                            threadMessagesCallState = DataFetchingState.OK
                         }
                     }
                 )
             } catch (e: Exception) {
-                println("Error fetching thread: ${e.message}")
                 e.printStackTrace()
+                threadMessagesCallState = DataFetchingState.ERRORED
             }
 
             drawerState.close()
@@ -213,12 +191,6 @@ class MainState(
 
     fun _setCurrentThreadId(id: String?) {
         currentThreadId = id
-    }
-
-    fun openDrawer() {
-        coroutineScope.launch {
-            drawerState.open()
-        }
     }
 }
 

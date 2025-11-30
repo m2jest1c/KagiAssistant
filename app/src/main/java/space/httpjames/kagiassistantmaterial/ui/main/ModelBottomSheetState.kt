@@ -13,14 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import space.httpjames.kagiassistantmaterial.AssistantClient
 import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
-import java.util.UUID
+import space.httpjames.kagiassistantmaterial.utils.DataFetchingState
 
 @Composable
 fun rememberModelBottomSheetState(
@@ -39,6 +34,8 @@ class ModelBottomSheetState(
     private val coroutineScope: CoroutineScope,
 ) {
     var profiles by mutableStateOf<List<AssistantProfile>>(emptyList())
+        private set
+    var profilesCallState by mutableStateOf<DataFetchingState>(DataFetchingState.FETCHING)
         private set
 
     var searchQuery by mutableStateOf("")
@@ -66,47 +63,14 @@ class ModelBottomSheetState(
 
     fun fetchProfiles() {
         coroutineScope.launch {
-            val streamId = UUID.randomUUID().toString()
-            assistantClient.fetchStream(
-                streamId = streamId,
-                url = "https://kagi.com/assistant/profile_list",
-                method = "POST",
-                body = """{}""",
-                extraHeaders = mapOf("Content-Type" to "application/json"),
-                onChunk = { chunk ->
-                    if (chunk.header == "profiles.json") {
-                        val json = Json.parseToJsonElement(chunk.data)
-                        val nest = json.jsonObject
-                        val profilesJson = nest["profiles"]?.jsonArray ?: emptyList()
-
-                        val parsedProfiles = profilesJson.map { profile ->
-                            println(profile)
-                            val obj = profile.jsonObject
-                            val key = obj["id"]?.jsonPrimitive?.contentOrNull
-                                ?: obj["model"]?.jsonPrimitive?.contentOrNull
-                            if (key == null) {
-                                throw IllegalStateException("Profile key is null")
-                            }
-                            AssistantProfile(
-                                key,
-                                obj["id"]?.jsonPrimitive?.contentOrNull,
-                                obj["model"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["model_provider"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["model_input_limit"]?.jsonPrimitive?.int ?: 40000,
-                            )
-                        }
-
-                        val (kagiProfiles, otherProfiles) = parsedProfiles.partition {
-                            it.family.equals(
-                                "kagi",
-                                ignoreCase = true
-                            )
-                        }
-                        this@ModelBottomSheetState.profiles = kagiProfiles + otherProfiles
-                    }
-                }
-            )
+            try {
+                profilesCallState = DataFetchingState.FETCHING
+                profiles = assistantClient.getProfiles()
+                profilesCallState = DataFetchingState.OK
+            } catch (e: Exception) {
+                e.printStackTrace()
+                profilesCallState = DataFetchingState.ERRORED
+            }
         }
     }
 

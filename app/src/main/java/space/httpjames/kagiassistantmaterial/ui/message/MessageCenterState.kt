@@ -27,8 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import space.httpjames.kagiassistantmaterial.AssistantClient
@@ -39,6 +37,7 @@ import space.httpjames.kagiassistantmaterial.KagiPromptRequest
 import space.httpjames.kagiassistantmaterial.KagiPromptRequestFocus
 import space.httpjames.kagiassistantmaterial.KagiPromptRequestProfile
 import space.httpjames.kagiassistantmaterial.KagiPromptRequestThreads
+import space.httpjames.kagiassistantmaterial.MessageDto
 import space.httpjames.kagiassistantmaterial.StreamChunk
 import space.httpjames.kagiassistantmaterial.parseMetadata
 import space.httpjames.kagiassistantmaterial.ui.main.parseReferencesHtml
@@ -177,36 +176,11 @@ class MessageCenterState(
 
     private fun fetchProfiles() {
         coroutineScope.launch {
-            val streamId = UUID.randomUUID().toString()
-            assistantClient.fetchStream(
-                streamId = streamId,
-                url = "https://kagi.com/assistant/profile_list",
-                method = "POST",
-                body = """{}""",
-                extraHeaders = mapOf("Content-Type" to "application/json"),
-                onChunk = { chunk ->
-                    if (chunk.header == "profiles.json") {
-                        val json = Json.parseToJsonElement(chunk.data)
-                        val nest = json.jsonObject
-                        val profiles = nest["profiles"]?.jsonArray ?: emptyList()
-
-                        this@MessageCenterState.profiles = emptyList()
-
-                        for (profile in profiles) {
-                            val obj = profile.jsonObject
-                            this@MessageCenterState.profiles += AssistantProfile(
-                                obj["id"]?.jsonPrimitive?.contentOrNull
-                                    ?: obj["model"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["id"]?.jsonPrimitive?.contentOrNull,
-                                obj["model"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["model_provider"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                                obj["model_input_limit"]?.jsonPrimitive?.int ?: 40000,
-                            )
-                        }
-                    }
-                }
-            )
+            try {
+                this@MessageCenterState.profiles = assistantClient.getProfiles()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -233,6 +207,7 @@ class MessageCenterState(
     }
 
     fun sendMessage(threadId: String?) {
+
         var messageId = UUID.randomUUID().toString()
         inProgressAssistantMessageId = messageId
 
@@ -254,6 +229,7 @@ class MessageCenterState(
         setThreadMessages(localMessages) // Direct call to the constructor param
 
         coroutineScope.launch {
+
             val streamId = UUID.randomUUID().toString()
             var lastTokenUpdateTime = 0L
 
@@ -269,6 +245,14 @@ class MessageCenterState(
             )
 
             setText("")
+
+            try {
+                if (profiles.isEmpty()) {
+                    this@MessageCenterState.profiles = assistantClient.getProfiles()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
             val requestBody = KagiPromptRequest(
                 focus,
@@ -333,60 +317,45 @@ class MessageCenterState(
                     }
 
                     "new_message.json" -> {
-                        val json = Json.parseToJsonElement(chunk.data)
-                        val obj = json.jsonObject
-                        val newText = obj["reply"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val md = obj["md"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val metadata = obj["metadata"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val citationsHtml =
-                            obj["references_html"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val dto = Json.parseToJsonElement(chunk.data).toObject<MessageDto>()
 
                         // update the local message (which will have the old id) with the new id
                         localMessages = localMessages.map {
-                            if (it.id == messageId) it.copy(id = id) else it
+                            if (it.id == messageId) it.copy(id = dto.id) else it
                         }
 
-                        inProgressAssistantMessageId = id + ".reply"
-                        messageId = id
+                        inProgressAssistantMessageId = dto.id + ".reply"
+                        messageId = dto.id
 
-                        val preparedCitations = if (citationsHtml.isNotBlank()) {
-                            parseReferencesHtml(citationsHtml)
-                        } else emptyList()
+                        val preparedCitations = parseReferencesHtml(dto.references_html)
 
                         // Update local accumulator
                         val exists = localMessages.any { it.id == inProgressAssistantMessageId }
                         localMessages = if (exists) {
                             localMessages.map {
                                 if (it.id == inProgressAssistantMessageId) it.copy(
-                                    content = newText,
+                                    content = dto.reply,
                                     citations = preparedCitations,
-                                    markdownContent = md,
-                                    metadata = parseMetadata(metadata)
-                                )
-                                else it
+                                    markdownContent = dto.md,
+                                    metadata = parseMetadata(dto.metadata)
+                                ) else it
                             }
                         } else {
-                            // get the last user message and mirror the branch list
-
                             localMessages + AssistantThreadMessage(
                                 id = inProgressAssistantMessageId!!,
-                                content = newText,
+                                content = dto.reply,
                                 role = AssistantThreadMessageRole.ASSISTANT,
                                 citations = preparedCitations,
                                 branchIds = localMessages.takeLast(1).firstOrNull()?.branchIds
                                     ?: emptyList(),
-                                markdownContent = md,
-                                metadata = parseMetadata(metadata),
+                                markdownContent = dto.md,
+                                metadata = parseMetadata(dto.metadata),
                             )
                         }
 
-                        // Always sync immediately for structural changes
                         coroutineScope.launch(Dispatchers.Main.immediate) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             setThreadMessages(localMessages)
-                            println("new message.json: $localMessages")
-                            println("setting thread messages to localMessages")
                         }
                     }
 
@@ -401,8 +370,6 @@ class MessageCenterState(
                             if (it.id == incomingId + ".reply") it.copy(content = newText)
                             else it
                         }
-
-                        println(localMessages)
 
                         // Throttle parent sync for performance
                         val currentTime = System.currentTimeMillis()
@@ -456,24 +423,32 @@ class MessageCenterState(
 
                 attachmentUris = emptyList()
 
-                assistantClient.sendMultipartRequest(
-                    streamId = streamId,
-                    url = url,
-                    requestBody = requestBody,
-                    files = files,
-                    thumbnails = thumbnails,
-                    mimeTypes = mimeTypes,
-                    onChunk = ::onChunk
-                )
+                try {
+                    assistantClient.sendMultipartRequest(
+                        streamId = streamId,
+                        url = url,
+                        requestBody = requestBody,
+                        files = files,
+                        thumbnails = thumbnails,
+                        mimeTypes = mimeTypes,
+                        onChunk = ::onChunk
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             } else {
-                assistantClient.fetchStream(
-                    streamId = streamId,
-                    url = url,
-                    method = "POST",
-                    body = jsonString,
-                    extraHeaders = mapOf("Content-Type" to "application/json"),
-                    onChunk = { chunk -> onChunk(chunk) }
-                )
+                try {
+                    assistantClient.fetchStream(
+                        streamId = streamId,
+                        url = url,
+                        method = "POST",
+                        body = jsonString,
+                        extraHeaders = mapOf("Content-Type" to "application/json"),
+                        onChunk = { chunk -> onChunk(chunk) }
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
             // Final sync to catch any remaining updates
