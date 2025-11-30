@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import space.httpjames.kagiassistantmaterial.AssistantClient
+import space.httpjames.kagiassistantmaterial.Screens
 import space.httpjames.kagiassistantmaterial.ui.chat.ChatArea
 import space.httpjames.kagiassistantmaterial.ui.message.MessageCenter
 import space.httpjames.kagiassistantmaterial.ui.shared.Header
@@ -73,11 +74,16 @@ fun MainScreen(
                         drawerState.close()
                     }
                 },
-                isLoading = state.threadsLoading,
+                callState = state.threadsCallState,
                 onSettingsClick = {
                     scope.launch {
-                        navController.navigate("settings")
+                        navController.navigate(Screens.SETTINGS.route)
                         drawerState.close()
+                    }
+                },
+                onRetryClick = {
+                    scope.launch {
+                        state.fetchThreads()
                     }
                 }
             )
@@ -123,15 +129,19 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 ChatArea(
-                    assistantClient = assistantClient,
                     threadMessages = state.threadMessages,
                     modifier = Modifier
                         .padding(innerPadding)
                         .weight(1f),
-                    isLoading = state.threadMessagesLoading,
+                    threadMessagesCallState = state.threadMessagesCallState,
                     currentThreadId = state.currentThreadId,
                     onEdit = {
                         state.editMessage(it)
+                    },
+                    onRetryClick = {
+                        scope.launch {
+                            state.onThreadSelected(state.currentThreadId!!)
+                        }
                     }
                 )
                 MessageCenter(
