@@ -59,7 +59,8 @@ fun SettingsItem(
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
         ) {
             Surface(
                 modifier = Modifier
@@ -77,15 +78,19 @@ fun SettingsItem(
                     )
                 }
             }
-            Column {
+            Column(modifier = Modifier.fillMaxWidth(if (rightSide != null) 0.75f else 1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle ?: "",
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.alpha(0.6f)
+                    modifier = Modifier.alpha(0.6f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }
