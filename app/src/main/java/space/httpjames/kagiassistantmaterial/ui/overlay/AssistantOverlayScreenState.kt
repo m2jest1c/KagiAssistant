@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -30,8 +31,10 @@ import space.httpjames.kagiassistantmaterial.KagiPromptRequestThreads
 import space.httpjames.kagiassistantmaterial.MessageDto
 import space.httpjames.kagiassistantmaterial.StreamChunk
 import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
+import space.httpjames.kagiassistantmaterial.ui.message.to84x84ThumbFile
 import space.httpjames.kagiassistantmaterial.ui.message.toObject
 import space.httpjames.kagiassistantmaterial.utils.TtsManager
+import java.io.File
 
 class AssistantOverlayState(
     private val prefs: SharedPreferences,
@@ -74,6 +77,9 @@ class AssistantOverlayState(
         private set
 
     var profiles by mutableStateOf<List<AssistantProfile>>(emptyList())
+        private set
+
+    var screenshotAttached by mutableStateOf(false)
         private set
 
 
@@ -121,6 +127,11 @@ class AssistantOverlayState(
         override fun onEvent(e: Int, b: Bundle?) {}
     }
 
+    fun toggleScreenshotAttached() {
+        screenshotAttached = !screenshotAttached
+    }
+
+
     fun saveText() {
         prefs.edit().putString("savedText", text).apply()
     }
@@ -138,9 +149,10 @@ class AssistantOverlayState(
         isTypingMode = isTyping
     }
 
-    fun sendMessage() {
+    fun sendMessage(screenshot: Bitmap? = null) {
         userMessage = text
-        onTextChanged("")
+
+
         coroutineScope.launch {
             val focus = KagiPromptRequestFocus(
                 currentThreadId,
@@ -224,14 +236,41 @@ class AssistantOverlayState(
             try {
                 isWaitingForMessageFirstToken = true
                 assistantDone = false
-                assistantClient.fetchStream(
-                    streamId = "overlay.id",
-                    url = "https://kagi.com/assistant/prompt",
-                    method = "POST",
-                    body = jsonString,
-                    extraHeaders = mapOf("Content-Type" to "application/json"),
-                    onChunk = { chunk -> onChunk(chunk) }
-                )
+                if (screenshot != null) {
+                    val tempFile = File.createTempFile(
+                        "temp",
+                        ".webp",
+                        context.cacheDir
+                    )
+
+                    tempFile.outputStream().use { out ->
+                        screenshot.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, out)
+                    }
+
+                    val thumbnail = tempFile.to84x84ThumbFile()
+
+                    assistantClient.sendMultipartRequest(
+                        streamId = "overlay.id",
+                        url = "https://kagi.com/assistant/prompt",
+                        requestBody = requestBody,
+                        files = listOf(tempFile),
+                        thumbnails = listOf(thumbnail),
+                        mimeTypes = listOf("image/webp"),
+                        onChunk = ::onChunk
+                    )
+                } else {
+                    assistantClient.fetchStream(
+                        streamId = "overlay.id",
+                        url = "https://kagi.com/assistant/prompt",
+                        method = "POST",
+                        body = jsonString,
+                        extraHeaders = mapOf("Content-Type" to "application/json"),
+                        onChunk = ::onChunk
+                    )
+                }
+
+                screenshotAttached = false
+                onTextChanged("")
             } catch (e: Exception) {
                 e.printStackTrace()
                 assistantDone = true
