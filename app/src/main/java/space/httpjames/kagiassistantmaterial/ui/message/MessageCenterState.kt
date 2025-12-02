@@ -405,7 +405,7 @@ class MessageCenterState(
                     val file = uri.copyToTempFile(context, "." + fileName.substringAfterLast("."))
                     files += file
                     val thumbnail =
-                        if (uriStr.endsWith(".webp") || uriStr.endsWith(".jpg") || uriStr.endsWith(
+                        if (fileName.endsWith(".webp") || fileName.endsWith(".jpg") || fileName.endsWith(
                                 ".png"
                             )
                         ) {

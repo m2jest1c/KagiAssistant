@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Screenshot
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -85,6 +84,7 @@ import kotlinx.coroutines.launch
 import space.httpjames.kagiassistantmaterial.AssistantClient
 import space.httpjames.kagiassistantmaterial.MainActivity
 import space.httpjames.kagiassistantmaterial.R
+import space.httpjames.kagiassistantmaterial.ui.assist.OverlayActionButton
 import space.httpjames.kagiassistantmaterial.ui.chat.HtmlCard
 import space.httpjames.kagiassistantmaterial.ui.chat.HtmlPreprocessor
 import space.httpjames.kagiassistantmaterial.ui.message.ShimmeringMessagePlaceholder
@@ -181,19 +181,20 @@ fun AssistantOverlayScreen(
                 Column(
                     verticalArrangement = Arrangement
                         .spacedBy(12.dp),
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
                 ) {
                     if (screenshot != null) {
-                        Button(onClick = {}) {
-                            Icon(
-                                imageVector = Icons.Default.Screenshot,
-                                contentDescription = "Screenshot",
-                            )
-                            Text("Attach screenshot")
-                        }
+                        OverlayActionButton(
+                            onClick = {
+                                state.toggleScreenshotAttached()
+                            },
+                            done = state.screenshotAttached,
+                            actionIcon = Icons.Default.Screenshot,
+                            actionText = "Attach Screenshot",
+                            doneActionText = "Screenshot Attached"
+                        )
                     }
                 }
-
 
                 Surface(
                     modifier = Modifier
@@ -223,10 +224,7 @@ fun AssistantOverlayScreen(
 
                         .systemBarsPadding(),
                     color = MaterialTheme.colorScheme.background,
-                    shape = if (state.assistantMessage.isBlank() && lines == 1 && !state.isWaitingForMessageFirstToken && state.assistantDone) RoundedCornerShape(
-                        32.dp
-                    )
-                    else RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Column {
                         Row(
@@ -325,9 +323,7 @@ fun AssistantOverlayScreen(
                                 )
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    if (state.assistantMessage.isBlank() && lines == 1 && !state.isWaitingForMessageFirstToken && state.assistantDone) RoundedCornerShape(
-                                        32.dp
-                                    ) else RoundedCornerShape(
+                                    RoundedCornerShape(
                                         16.dp
                                     )
                                 )
@@ -400,7 +396,7 @@ fun AssistantOverlayScreen(
                                         } else if (!state.isListening && state.text.isEmpty()) {
                                             state.restartFlow()
                                         } else {
-                                            state.sendMessage()
+                                            state.sendMessage(if (state.screenshotAttached) screenshot else null)
                                             localFocusContext.clearFocus()
                                             state.onTextChanged("")
                                         }
