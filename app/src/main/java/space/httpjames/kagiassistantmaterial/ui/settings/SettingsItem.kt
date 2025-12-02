@@ -51,7 +51,7 @@ fun SettingsItem(
             .fillMaxWidth()
             .height(82.dp)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(onClick != null, onClick = onClick ?: {}),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
