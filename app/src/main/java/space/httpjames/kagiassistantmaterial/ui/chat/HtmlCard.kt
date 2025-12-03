@@ -2,11 +2,10 @@ package space.httpjames.kagiassistantmaterial.ui.chat
 
 import android.content.Context
 import android.content.res.Configuration
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebSettings
 import android.webkit.WebView
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,26 +23,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
-private const val MIN_WEBVIEW_HEIGHT = 0
 
 @Composable
 fun HtmlCard(
     html: String,
     modifier: Modifier = Modifier,
-    minHeight: Int = MIN_WEBVIEW_HEIGHT,
+    minHeight: Dp = 60.dp,
     onHeightMeasured: (() -> Unit)? = null,
 ) {
-    var heightState by remember { mutableIntStateOf(minHeight) }
+    var heightState by remember { mutableIntStateOf(0) }
 
     val context = LocalContext.current
 
-    val animatedHeight = animateDpAsState(
-        targetValue = heightState.dp,
-        animationSpec = tween(300)
-    ).value
+//    val animatedHeight = animateDpAsState(
+//        targetValue = heightState.dp,
+//        animationSpec = tween(300)
+//    ).value
+    val animatedHeight = heightState.dp
 
     Card(
         modifier = modifier
@@ -58,20 +58,33 @@ fun HtmlCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
+                .heightIn(min = minHeight)
                 .height(animatedHeight),
             contentAlignment = Alignment.Center,
         ) {
             AndroidView(
                 factory = { context ->
-                    WebView(context).apply {
+                    object : WebView(context) {
+                        override fun onTouchEvent(event: MotionEvent?): Boolean {
+                            // Never consume touch events - let parent scroll handle them
+                            return false
+                        }
+
+                        override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
+                            // Never intercept children's touch events either
+                            return false
+                        }
+                    }.apply {
                         isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
                         scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+                        isNestedScrollingEnabled = false
+                        overScrollMode = View.OVER_SCROLL_NEVER
+                        isScrollContainer = false
 
                         addJavascriptInterface(
                             HtmlViewerJavaScriptInterface(
-                                expectedMin = minHeight,
+                                expectedMin = 0,
                                 onHeightMeasured = { h ->
                                     heightState = h
                                     onHeightMeasured?.invoke()

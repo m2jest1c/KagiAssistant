@@ -184,8 +184,18 @@ class MessageCenterState(
         }
     }
 
+    fun restoreText() {
+        setText(prefs.getString("savedText", "") ?: "")
+    }
+
+    private fun saveText(newText: String) {
+        prefs.edit().putString("savedText", newText).apply()
+    }
+
+
     fun onTextChanged(newText: String) {
         setText(newText)
+        saveText(newText)
     }
 
     fun toggleSearch() {
@@ -235,7 +245,6 @@ class MessageCenterState(
 
             // branch lineage is determined as: last message ID's branch ID
             val branchId = localMessages.takeLast(1).firstOrNull()?.branchIds?.lastOrNull()
-            println("branch id: $branchId")
 
             val focus = KagiPromptRequestFocus(
                 threadId,
@@ -244,7 +253,7 @@ class MessageCenterState(
                 branchId,
             )
 
-            setText("")
+            onTextChanged("")
 
             try {
                 if (profiles.isEmpty()) {
@@ -396,7 +405,7 @@ class MessageCenterState(
                     val file = uri.copyToTempFile(context, "." + fileName.substringAfterLast("."))
                     files += file
                     val thumbnail =
-                        if (uriStr.endsWith(".webp") || uriStr.endsWith(".jpg") || uriStr.endsWith(
+                        if (fileName.endsWith(".webp") || fileName.endsWith(".jpg") || fileName.endsWith(
                                 ".png"
                             )
                         ) {
@@ -466,7 +475,7 @@ fun File.to84x84ThumbFile(): File {
 
     val outFile = createTempFile("thumb_", ".webp")   // /data/local/tmp/…  (world-writable)
     FileOutputStream(outFile).use { out ->
-        thumb.compress(Bitmap.CompressFormat.WEBP_LOSSY, 100, out)
+        thumb.compress(Bitmap.CompressFormat.WEBP_LOSSY, 50, out)
     }
     return outFile
 }
