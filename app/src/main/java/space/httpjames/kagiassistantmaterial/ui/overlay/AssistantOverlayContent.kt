@@ -4,10 +4,8 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,17 +54,17 @@ fun AssistantOverlayContent(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(vertical = 8.dp)
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onVerticalDrag = { _, dragAmount ->
                                 dragDistance += dragAmount
                             },
                             onDragEnd = {
-                                if (dragDistance < -40f) {
+                                if (dragDistance < -20f) {
                                     continueInApp()
                                 }
                                 dragDistance = 0f
@@ -76,7 +74,7 @@ fun AssistantOverlayContent(
                             }
                         )
                     },
-                horizontalArrangement = Arrangement.Center
+                contentAlignment = Alignment.Center
             ) {
                 HorizontalDivider(
                     modifier = Modifier
