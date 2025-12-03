@@ -1,14 +1,13 @@
 package space.httpjames.kagiassistantmaterial
 
-import android.content.Context
+import android.Manifest
+import android.R
 import android.os.Bundle
-import android.service.voice.VoiceInteractionService
-import android.service.voice.VoiceInteractionSession
-import android.service.voice.VoiceInteractionSessionService
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.compose.NavHost
@@ -31,7 +30,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val rootView: View = findViewById(android.R.id.content)
+        val rootView: View = findViewById(R.id.content)
 
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
@@ -49,6 +48,12 @@ class MainActivity : ComponentActivity() {
         }
 
         val prefs = getSharedPreferences("assistant_prefs", MODE_PRIVATE)
+
+        val launcher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                prefs.edit().putBoolean("mic_granted", granted).apply()
+            }
+        launcher.launch(Manifest.permission.RECORD_AUDIO)
 
         setContent {
             KagiAssistantTheme {
@@ -85,11 +90,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-class KagiAssistantService : VoiceInteractionService()
-class KagiAssistantSession(context: Context) : VoiceInteractionSession(context)
 
-class KagiAssistantIService : VoiceInteractionSessionService() {
-    override fun onNewSession(p0: Bundle): VoiceInteractionSession {
-        return KagiAssistantSession(this)
-    }
-}
+
+

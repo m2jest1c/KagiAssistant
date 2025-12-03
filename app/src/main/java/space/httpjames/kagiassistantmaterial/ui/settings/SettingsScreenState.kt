@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.httpjames.kagiassistantmaterial.AssistantClient
+import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
 import space.httpjames.kagiassistantmaterial.utils.DataFetchingState
 
 @Composable
@@ -33,6 +34,13 @@ class SettingsScreenState(
     var emailAddressCallState by mutableStateOf<DataFetchingState>(DataFetchingState.FETCHING)
         private set
 
+    var autoSpeakReplies by mutableStateOf(
+        prefs.getBoolean(
+            "auto_speak_replies",
+            true
+        )
+    )
+
     var openKeyboardAutomatically by mutableStateOf(
         prefs.getBoolean(
             "open_keyboard_automatically",
@@ -41,9 +49,52 @@ class SettingsScreenState(
     )
         private set
 
+    var profiles by mutableStateOf<List<AssistantProfile>>(emptyList())
+        private set
+
+    var showAssistantModelChooserModal by mutableStateOf(false)
+        private set
+    var selectedAssistantModel by mutableStateOf<String>(
+        prefs.getString("assistant_model", null) ?: "gemini-2-5-flash-lite"
+    )
+        private set
+    var selectedAssistantModelName by mutableStateOf<String?>(null)
+        private set
+    var useMiniOverlay by mutableStateOf<Boolean>(
+        prefs.getBoolean(
+            "use_mini_overlay",
+            true
+        )
+    )
+        private set
+
+    fun toggleUseMiniOverlay() {
+        useMiniOverlay = !useMiniOverlay
+        prefs.edit().putBoolean("use_mini_overlay", useMiniOverlay).apply()
+    }
+
+
+    fun showAssistantModelChooser() {
+        showAssistantModelChooserModal = true
+    }
+
+    fun hideAssistantModelChooser() {
+        showAssistantModelChooserModal = false
+    }
+
+    fun saveAssistantModel(key: String) {
+        prefs.edit().putString("assistant_model", key).apply()
+        selectedAssistantModel = key
+    }
+
     fun toggleOpenKeyboardAutomatically() {
         openKeyboardAutomatically = !openKeyboardAutomatically
         prefs.edit().putBoolean("open_keyboard_automatically", openKeyboardAutomatically).apply()
+    }
+
+    fun toggleAutoSpeakReplies() {
+        autoSpeakReplies = !autoSpeakReplies
+        prefs.edit().putBoolean("auto_speak_replies", autoSpeakReplies).apply()
     }
 
     fun clearAllPrefs() {
@@ -56,6 +107,9 @@ class SettingsScreenState(
                 emailAddressCallState = DataFetchingState.FETCHING
                 emailAddress = assistantClient.getAccountEmailAddress()
                 emailAddressCallState = DataFetchingState.OK
+                profiles = assistantClient.getProfiles()
+                selectedAssistantModelName =
+                    profiles.firstOrNull { it.key == selectedAssistantModel }?.name
             } catch (e: Exception) {
                 emailAddressCallState = DataFetchingState.ERRORED
                 e.printStackTrace()

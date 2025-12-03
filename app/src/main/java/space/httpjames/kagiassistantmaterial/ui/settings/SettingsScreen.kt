@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Assistant
+import androidx.compose.material.icons.filled.HomeMini
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -68,6 +70,7 @@ fun SettingsScreen(
         0
     )
 
+
     LaunchedEffect(Unit) {
         state.runInit()
     }
@@ -97,8 +100,8 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .fillMaxWidth()
-                .scrollable(scrollState, Orientation.Vertical),
+                .fillMaxSize()
+                .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -170,10 +173,55 @@ fun SettingsScreen(
                     }
                 )
                 SettingsItem(
+                    icon = Icons.Default.HomeMini,
+                    title = "Use mini overlay",
+                    subtitle = "Show assist overlay instead of app",
+                    pos = SettingsItemPosition.MIDDLE,
+                    iconBackgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    rightSide = {
+                        Switch(checked = state.useMiniOverlay, onCheckedChange = {
+                            state.toggleUseMiniOverlay()
+                        })
+                    }
+                )
+                SettingsItem(
+                    icon = Icons.Default.Assistant,
+                    title = "Assistant model",
+                    subtitle = "Using ${state.selectedAssistantModelName ?: "..."}",
+                    pos = SettingsItemPosition.MIDDLE,
+                    iconBackgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    onClick = {
+                        state.showAssistantModelChooser()
+                    }
+                )
+                SettingsItem(
+                    icon = Icons.Default.PhoneInTalk,
+                    title = "Speak replies",
+                    subtitle = "Read aloud assistant replies",
+                    pos = SettingsItemPosition.BOTTOM,
+                    iconBackgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    rightSide = {
+                        Switch(checked = state.autoSpeakReplies, onCheckedChange = {
+                            state.toggleAutoSpeakReplies()
+                        })
+                    }
+                )
+                
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            ) {
+                SettingsItem(
                     icon = Icons.Default.Keyboard,
                     title = "Auto keyboard",
                     subtitle = "Always focus the message bar",
-                    pos = SettingsItemPosition.BOTTOM,
+                    pos = SettingsItemPosition.SINGLE,
                     iconBackgroundColor = MaterialTheme.colorScheme.primaryContainer,
                     iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
                     rightSide = {
@@ -258,5 +306,16 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (state.showAssistantModelChooserModal) {
+        AssistantModelChooserModal(
+            profiles = state.profiles,
+            onDismiss = { state.hideAssistantModelChooser() },
+            onModelSelected = {
+                state.saveAssistantModel(it)
+            },
+            selectedKey = state.selectedAssistantModel
+        )
     }
 }
