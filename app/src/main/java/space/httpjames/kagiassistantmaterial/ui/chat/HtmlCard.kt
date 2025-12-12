@@ -78,6 +78,20 @@ fun HtmlCard(
             AndroidView(
                 factory = { context ->
                     object : WebView(context) {
+                        override fun overScrollBy(
+                            deltaX: Int, deltaY: Int,
+                            scrollX: Int, scrollY: Int,
+                            scrollRangeX: Int, scrollRangeY: Int,
+                            maxOverScrollX: Int, maxOverScrollY: Int,
+                            isTouchEvent: Boolean
+                        ): Boolean {
+                            return false
+                        }
+
+                        override fun scrollTo(x: Int, y: Int) {
+                            // Prevent all internal scrolling
+                        }
+
                     }.apply {
                         isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
