@@ -55,6 +55,9 @@ fun ShimmeringText(
     Text(
         text = text,
         modifier = modifier,
-        style = style.copy(brush = brush)
+        style = style.copy(brush = brush),
+
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+
     )
 }
