@@ -67,7 +67,10 @@ fun ChatEvent(
                         Text(
                             text = displayText,
                             style = TextStyle(fontSize = 16.sp),
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f),
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     } else {
                         CircularProgressIndicator(
@@ -75,6 +78,7 @@ fun ChatEvent(
                         )
                         ShimmeringText(
                             text = displayText,
+                            modifier = Modifier.weight(1f),
                             style = TextStyle(fontSize = 16.sp)
                         )
                     }
