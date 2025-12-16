@@ -73,6 +73,16 @@ fun MainScreen(
         }
     }
 
+    BackHandler(
+        enabled = !drawerState.isOpen
+                && state.isTemporaryChat
+                && state.currentThreadId == null
+                && !imeVisible
+    ) {
+        state.toggleIsTemporaryChat()
+    }
+
+
     // Only handle back for "clear chat" when keyboard is NOT visible
     BackHandler(
         enabled = !drawerState.isOpen
