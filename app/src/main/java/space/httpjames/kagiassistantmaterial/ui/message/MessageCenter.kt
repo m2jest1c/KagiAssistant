@@ -32,6 +32,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
@@ -52,6 +54,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import space.httpjames.kagiassistantmaterial.AssistantClient
 import space.httpjames.kagiassistantmaterial.AssistantThreadMessage
+import space.httpjames.kagiassistantmaterial.ui.chat.cleanup.ChatCleanupManager
 import space.httpjames.kagiassistantmaterial.ui.main.ModelBottomSheet
 
 @Composable
@@ -67,7 +70,8 @@ fun MessageCenter(
     text: String,
     setText: (String) -> Unit,
     setEditingMessageId: (String?) -> Unit,
-    setCurrentThreadTitle: (String) -> Unit
+    setCurrentThreadTitle: (String) -> Unit,
+    isTemporaryChat: Boolean,
 ) {
     val state = rememberMessageCenterState(
         setCurrentThreadTitle = setCurrentThreadTitle,
@@ -79,7 +83,8 @@ fun MessageCenter(
         assistantClient = assistantClient,
         threadMessages = threadMessages,
         setThreadMessages = setThreadMessages,
-        setCurrentThreadId = setCurrentThreadId
+        setCurrentThreadId = setCurrentThreadId,
+        isTemporaryChat = isTemporaryChat
     )
 
     val textFieldShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
@@ -90,7 +95,15 @@ fun MessageCenter(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    
+
+    val context = LocalContext.current
+
+    LaunchedEffect(threadId, threadMessages.size, isTemporaryChat) {
+        if (isTemporaryChat && threadMessages.isNotEmpty() && threadId != null) {
+            ChatCleanupManager.schedule(context, threadId, assistantClient.getSessionToken())
+        }
+    }
+
     DisposableEffect(lifecycle) {
         val observer = object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) {
@@ -154,7 +167,7 @@ fun MessageCenter(
                     state.onTextChanged(it)
                 }
             },
-            placeholder = { Text("Ask Assistant") },
+            placeholder = { Text(if (isTemporaryChat) "Temporary chat" else "Ask Assistant") },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false)
