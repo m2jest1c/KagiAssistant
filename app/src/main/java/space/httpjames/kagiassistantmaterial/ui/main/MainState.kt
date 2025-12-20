@@ -70,6 +70,13 @@ class MainState(
     var messageCenterText by mutableStateOf<String>("")
         private set
 
+    var isTemporaryChat by mutableStateOf(false)
+        private set
+
+    fun toggleIsTemporaryChat() {
+        isTemporaryChat = !isTemporaryChat
+    }
+
     fun editMessage(messageId: String) {
         // find the message in the threadMessages and delete that message + every message after it, but keep all previous ones
         val index = threadMessages.indexOfFirst { it.id == messageId }
@@ -121,7 +128,18 @@ class MainState(
         }
     }
 
+    suspend fun deleteChat() {
+        assistantClient.deleteChat(currentThreadId ?: return, { newChat() })
+    }
+
     fun newChat() {
+        if (isTemporaryChat) {
+            isTemporaryChat = false
+            coroutineScope.launch {
+                deleteChat()
+            }
+            return
+        }
         editingMessageId = null
         currentThreadId = null
         currentThreadTitle = null
