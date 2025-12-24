@@ -1,6 +1,7 @@
 package space.httpjames.kagiassistantmaterial.ui.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -372,6 +373,31 @@ class MainViewModel(
 
     fun removeAttachmentUri(uri: String) {
         _messageCenterState.update { it.copy(attachmentUris = it.attachmentUris - uri) }
+    }
+
+    /**
+     * Add multiple shared attachment URIs from an intent (e.g., from Android share sheet).
+     * Takes URI permissions to persist access to the shared content.
+     */
+    fun addSharedAttachmentUris(context: Context, uris: List<Uri>) {
+        // Take persistable URI permissions for the shared content
+        uris.forEach { uri ->
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: SecurityException) {
+                // Permission may already be held or not persistable
+                // Continue anyway as the URI might still be accessible
+                e.printStackTrace()
+            }
+        }
+
+        // Add each URI using the existing validation logic
+        uris.forEach { uri ->
+            addAttachmentUri(context, uri.toString())
+        }
     }
 
     fun onDismissAttachmentBottomSheet() {

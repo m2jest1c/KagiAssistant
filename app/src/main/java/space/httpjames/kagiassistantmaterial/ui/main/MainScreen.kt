@@ -1,6 +1,7 @@
 package space.httpjames.kagiassistantmaterial.ui.main
 
 import android.content.ClipData
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.layout.Column
@@ -50,7 +51,8 @@ import space.httpjames.kagiassistantmaterial.ui.viewmodel.MainViewModel
 fun MainScreen(
     assistantClient: AssistantClient,
     modifier: Modifier = Modifier,
-    navController: NavController
+    navController: NavController,
+    sharedUris: List<Uri>? = null
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -86,6 +88,12 @@ fun MainScreen(
         onDispose { lifecycle.removeObserver(observer) }
     }
 
+    // Process shared URIs from intent
+    LaunchedEffect(sharedUris) {
+        sharedUris?.let { uris ->
+            viewModel.addSharedAttachmentUris(context, uris)
+        }
+    }
 
     // Track keyboard visibility
     val density = LocalDensity.current

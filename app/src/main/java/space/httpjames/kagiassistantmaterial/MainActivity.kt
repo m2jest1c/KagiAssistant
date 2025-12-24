@@ -1,13 +1,15 @@
 package space.httpjames.kagiassistantmaterial
 
 import android.Manifest
-import android.R
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateListOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.compose.NavHost
@@ -29,11 +31,16 @@ enum class Screens(val route: String) {
 
 class MainActivity : ComponentActivity() {
 
+    private val pendingSharedUris = mutableStateListOf<Uri>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val rootView: View = findViewById(R.id.content)
+        // Handle initial intent (e.g., when app is launched from share sheet)
+        extractSharedUris(intent)?.let { pendingSharedUris.addAll(it) }
+
+        val rootView: View = findViewById(android.R.id.content)
 
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
@@ -61,7 +68,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             KagiAssistantTheme {
                 val navController = rememberNavController()
-                var sessionToken = prefs.getString(PreferenceKey.SESSION_TOKEN.key, PreferenceKey.DEFAULT_SESSION_TOKEN)
+                var sessionToken = prefs.getString(
+                    PreferenceKey.SESSION_TOKEN.key,
+                    PreferenceKey.DEFAULT_SESSION_TOKEN
+                )
 
                 NavHost(
                     navController = navController,
@@ -78,7 +88,17 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(Screens.MAIN.route) {
                         val assistantClient = AssistantClient(sessionToken!!)
-                        MainScreen(assistantClient = assistantClient, navController = navController)
+                        // Observe the shared URIs state and pass a copy to MainScreen
+                        val sharedUris = pendingSharedUris.toList()
+                        // Clear after consuming by taking all elements at once
+                        if (sharedUris.isNotEmpty()) {
+                            pendingSharedUris.clear()
+                        }
+                        MainScreen(
+                            assistantClient = assistantClient,
+                            navController = navController,
+                            sharedUris = sharedUris
+                        )
                     }
                     composable(Screens.SETTINGS.route) {
                         val assistantClient = AssistantClient(sessionToken!!)
@@ -96,6 +116,46 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Handle new intent when app is already running (singleTask launch mode)
+        extractSharedUris(intent)?.let { uris ->
+            pendingSharedUris.clear()
+            pendingSharedUris.addAll(uris)
+        }
+    }
+
+    /**
+     * Extract shared URIs from an intent.
+     * Handles both ACTION_SEND (single item) and ACTION_SEND_MULTIPLE (multiple items).
+     */
+    private fun extractSharedUris(intent: Intent?): List<Uri>? {
+        if (intent == null) return null
+
+        val action = intent.action ?: return null
+        val type = intent.type
+
+        println("$action $type")
+
+        return when (action) {
+            Intent.ACTION_SEND -> {
+                if (type != null) {
+                    val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    if (uri != null) listOf(uri) else null
+                } else null
+            }
+
+            Intent.ACTION_SEND_MULTIPLE -> {
+                if (type != null) {
+                    val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    if (!uris.isNullOrEmpty()) uris else null
+                } else null
+            }
+
+            else -> null
         }
     }
 }
