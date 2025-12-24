@@ -2,6 +2,7 @@ package space.httpjames.kagiassistantmaterial.ui.main
 
 import android.content.ClipData
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,17 +18,24 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import space.httpjames.kagiassistantmaterial.AssistantClient
@@ -35,6 +43,8 @@ import space.httpjames.kagiassistantmaterial.Screens
 import space.httpjames.kagiassistantmaterial.ui.chat.ChatArea
 import space.httpjames.kagiassistantmaterial.ui.message.MessageCenter
 import space.httpjames.kagiassistantmaterial.ui.shared.Header
+import space.httpjames.kagiassistantmaterial.ui.viewmodel.AssistantViewModelFactory
+import space.httpjames.kagiassistantmaterial.ui.viewmodel.MainViewModel
 
 @Composable
 fun MainScreen(
@@ -43,8 +53,24 @@ fun MainScreen(
     navController: NavController
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+    val prefs =
+        context.getSharedPreferences("assistant_prefs", android.content.Context.MODE_PRIVATE)
+    val cacheDir = context.cacheDir.absolutePath
 
-    val state = rememberMainState(assistantClient = assistantClient, context = context)
+    val viewModel: MainViewModel = viewModel(
+        factory = AssistantViewModelFactory(
+            assistantClient,
+            prefs,
+            cacheDir,
+            onTokenReceived = {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+            }
+        )
+    )
+    val threadsState by viewModel.threadsState.collectAsState()
+    val messagesState by viewModel.messagesState.collectAsState()
+
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
@@ -53,7 +79,7 @@ fun MainScreen(
     DisposableEffect(lifecycle) {
         val observer = object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) {
-                state.restoreThread()
+                viewModel.restoreThread()
             }
         }
         lifecycle.addObserver(observer)
@@ -67,34 +93,40 @@ fun MainScreen(
 
     val clipboard = LocalClipboard.current
 
-    BackHandler(enabled = drawerState.isOpen) {
+    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = drawerState.isOpen) { backEvents ->
+        backEvents.collect { event ->
+            predictiveBackProgress = event.progress
+        }
         scope.launch {
             drawerState.close()
+            predictiveBackProgress = 0f
         }
     }
 
     BackHandler(
         enabled = !drawerState.isOpen
-                && state.isTemporaryChat
-                && state.currentThreadId == null
+                && messagesState.isTemporaryChat
+                && threadsState.currentThreadId == null
                 && !imeVisible
     ) {
-        state.toggleIsTemporaryChat()
+        viewModel.toggleIsTemporaryChat()
     }
 
 
     // Only handle back for "clear chat" when keyboard is NOT visible
     BackHandler(
         enabled = !drawerState.isOpen
-                && state.currentThreadId != null
-                && !imeVisible  // <-- Add this condition
+                && threadsState.currentThreadId != null
+                && !imeVisible
     ) {
-        state.newChat()
+        viewModel.newChat()
     }
 
     if (drawerState.isOpen) {
         LaunchedEffect(Unit) {
-            state.fetchThreads()
+            viewModel.fetchThreads()
         }
     }
 
@@ -102,14 +134,14 @@ fun MainScreen(
         drawerState = drawerState,
         drawerContent = {
             ThreadsDrawerSheet(
-                threads = state.threads,
+                threads = threadsState.threads,
                 onThreadSelected = {
                     scope.launch {
-                        state.onThreadSelected(it)
+                        viewModel.onThreadSelected(it)
                         drawerState.close()
                     }
                 },
-                callState = state.threadsCallState,
+                callState = threadsState.callState,
                 onSettingsClick = {
                     scope.launch {
                         navController.navigate(Screens.SETTINGS.route)
@@ -118,25 +150,26 @@ fun MainScreen(
                 },
                 onRetryClick = {
                     scope.launch {
-                        state.fetchThreads()
+                        viewModel.fetchThreads()
                     }
-                }
+                },
+                predictiveBackProgress = predictiveBackProgress
             )
         }) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
             topBar = {
                 Header(
-                    threadTitle = state.currentThreadTitle,
+                    threadTitle = messagesState.currentThreadTitle,
                     onMenuClick = { scope.launch { drawerState.open() } },
-                    onNewChatClick = { state.newChat() },
+                    onNewChatClick = { viewModel.newChat() },
                     onCopyClick = {
                         scope.launch {
                             clipboard.setClipEntry(
                                 ClipEntry(
                                     ClipData.newPlainText(
                                         "Thread title",
-                                        state.currentThreadTitle
+                                        messagesState.currentThreadTitle
                                     )
                                 )
                             )
@@ -144,13 +177,13 @@ fun MainScreen(
                     },
                     onDeleteClick = {
                         scope.launch {
-                            state.deleteChat()
+                            viewModel.deleteChat()
                         }
                     },
                     onTemporaryChatClick = {
-                        state.toggleIsTemporaryChat()
+                        viewModel.toggleIsTemporaryChat()
                     },
-                    isTemporaryChat = state.isTemporaryChat
+                    isTemporaryChat = messagesState.isTemporaryChat
                 )
             }
         ) { innerPadding ->
@@ -158,7 +191,7 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 ChatArea(
-                    threadMessages = state.threadMessages,
+                    threadMessages = messagesState.messages,
                     modifier = Modifier
                         .padding(
                             PaddingValues(
@@ -169,36 +202,25 @@ fun MainScreen(
                             )
                         )
                         .weight(1f),
-                    threadMessagesCallState = state.threadMessagesCallState,
-                    currentThreadId = state.currentThreadId,
+                    threadMessagesCallState = messagesState.callState,
+                    currentThreadId = threadsState.currentThreadId,
                     onEdit = {
-                        state.editMessage(it)
+                        viewModel.editMessage(it)
                     },
                     onRetryClick = {
                         scope.launch {
-                            state.onThreadSelected(state.currentThreadId!!)
+                            viewModel.onThreadSelected(threadsState.currentThreadId!!)
                         }
                     },
-                    isTemporaryChat = state.isTemporaryChat
+                    isTemporaryChat = messagesState.isTemporaryChat
                 )
                 MessageCenter(
-                    threadId = state.currentThreadId,
+                    threadId = threadsState.currentThreadId,
                     assistantClient = assistantClient,
-
-                    threadMessages = state.threadMessages,
-                    setThreadMessages = { state.threadMessages = it },
-                    coroutineScope = state.coroutineScope,
-                    setCurrentThreadId = { state._setCurrentThreadId(it) },
-
-                    text = state.messageCenterText,
-                    setText = { state._setMessageCenterText(it) },
-
-                    editingMessageId = state.editingMessageId,
-                    setEditingMessageId = { state._setEditingMessageId(it) },
-
-                    setCurrentThreadTitle = { state._setCurrentThreadTitle(it) },
-
-                    isTemporaryChat = state.isTemporaryChat
+                    viewModel = viewModel,
+                    coroutineScope = scope,
+                    prefs = prefs,
+                    cacheDir = cacheDir
                 )
             }
         }

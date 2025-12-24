@@ -1,7 +1,7 @@
 package space.httpjames.kagiassistantmaterial
 
-import com.squareup.moshi.Moshi
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -26,8 +26,7 @@ class AssistantClientUnitTest {
     }
 
     @Test
-    fun assistantClient_authenticated() {
-
+    fun assistantClient_authenticated() = runTest {
         val isAuthenticated = assistantClient.checkAuthentication()
 
         assertTrue(
@@ -37,7 +36,7 @@ class AssistantClientUnitTest {
     }
 
 //    @Test
-//    fun assistantClient_getThreads() {
+//    fun assistantClient_getThreads() = runTest {
 //        println("Getting threads...")
 //        val threads = assistantClient.getThreads()
 //
@@ -56,10 +55,9 @@ class AssistantClientUnitTest {
             method = "POST",
             body = """{"focus":{"thread_id":"$threadId"}}""",
             extraHeaders = mapOf("Content-Type" to "application/json"),
-            onChunk = { chunk ->
-                println("CHUNK RECEIVED: $chunk")
-            }
-        )
+        ).collect { chunk ->
+            println("CHUNK RECEIVED: $chunk")
+        }
     }
 
     @Test
@@ -71,10 +69,9 @@ class AssistantClientUnitTest {
             method = "POST",
             body = """{}""",
             extraHeaders = mapOf("Content-Type" to "application/json"),
-            onChunk = { chunk ->
-                println("CHUNK RECEIVED: $chunk")
-            }
-        )
+        ).collect { chunk ->
+            println("CHUNK RECEIVED: $chunk")
+        }
     }
 
     @Test
@@ -108,12 +105,8 @@ class AssistantClientUnitTest {
             )
         )
 
-        val moshi = Moshi.Builder()
-            .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
-            .build()
-
-        val jsonAdapter = moshi.adapter(KagiPromptRequest::class.java)
-        val jsonString = jsonAdapter.toJson(requestBody)
+        // Use Kotlinx Serialization to encode request
+        val jsonString = Json.encodeToString(KagiPromptRequest.serializer(), requestBody)
 
         assistantClient.fetchStream(
             streamId = streamId,
@@ -121,21 +114,21 @@ class AssistantClientUnitTest {
             method = "POST",
             body = jsonString,
             extraHeaders = mapOf("Content-Type" to "application/json"),
-            onChunk = { chunk ->
-                println("CHUNK RECEIVED: $chunk")
-            }
-        )
+        ).collect { chunk ->
+            println("CHUNK RECEIVED: $chunk")
+        }
     }
 
     @Test
-    fun assistantClient_authorization() {
+    fun assistantClient_authorization() = runTest {
         val qrRemoteSession = assistantClient.getQrRemoteSession()
         val data = qrRemoteSession.getOrNull()
         assertNotNull(data)
         val token = data!!.token
         println("https://kagi.com/settings/qr_authorize?t=$token")
 
-        while (true) {
+        var checkCount = 0
+        while (checkCount < 60) { // 60 seconds max
             val check = assistantClient.checkQrRemoteSession(data)
             if (check.isSuccess) {
                 println("Authorized")
@@ -147,13 +140,14 @@ class AssistantClientUnitTest {
                 println("Not authorized yet")
             }
 
-//            wait 1s
+            // wait 1s
             Thread.sleep(1000)
+            checkCount++
         }
     }
 
     @Test
-    fun assistantClient_getKagiCompanions() {
+    fun assistantClient_getKagiCompanions() = runTest {
         val companions = assistantClient.getKagiCompanions()
         println(companions)
     }
