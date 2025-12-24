@@ -1,23 +1,20 @@
 package space.httpjames.kagiassistantmaterial
 
 import android.graphics.Bitmap
-import com.squareup.moshi.JsonClass
-import com.squareup.moshi.Moshi
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import okhttp3.Call
-import okhttp3.Callback
+import okhttp3.Cookie
+import okhttp3.CookieJar
 import okhttp3.Headers
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -25,19 +22,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import okio.BufferedSource
-import okio.IOException
 import org.jsoup.Jsoup
 import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
 import space.httpjames.kagiassistantmaterial.ui.message.toObject
 import space.httpjames.kagiassistantmaterial.utils.JsonLenient
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 data class AssistantThread(
     val id: String,
@@ -97,14 +90,14 @@ data class DocumentDto(
 inline fun <reified T> JsonElement.toObject(): T =
     JsonLenient.decodeFromJsonElement<T>(this)
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class KagiPromptRequest(
     val focus: KagiPromptRequestFocus,
     val profile: KagiPromptRequestProfile,
     val threads: List<KagiPromptRequestThreads>? = null,
 )
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class KagiPromptRequestFocus(
     val thread_id: String?,
     val message_id: String?,
@@ -112,7 +105,7 @@ data class KagiPromptRequestFocus(
     val branch_id: String?,
 )
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class KagiPromptRequestProfile(
     val id: String?,
     val internet_access: Boolean,
@@ -121,7 +114,7 @@ data class KagiPromptRequestProfile(
     val personalizations: Boolean,
 )
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class KagiPromptRequestThreads(
     val tag_ids: List<String>,
     val saved: Boolean,
@@ -152,9 +145,45 @@ data class MultipartAssistantPromptFile(
     val mime: String,
 )
 
+/**
+ * Simple in-memory CookieJar for session management.
+ */
+private class SimpleCookieJar : CookieJar {
+    private val cookies = mutableMapOf<String, List<Cookie>>()
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        this.cookies[url.host] = cookies
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        return cookies[url.host] ?: emptyList()
+    }
+
+    fun getCookieValue(url: HttpUrl, name: String): String? {
+        return cookies[url.host]?.firstOrNull { it.name == name }?.value
+    }
+
+    fun setCookie(host: String, cookie: Cookie) {
+        cookies[host] = (cookies[host] ?: emptyList()) + cookie
+    }
+}
+
 class AssistantClient(
     private val sessionToken: String,
+    private val okHttpClient: OkHttpClient = createDefaultClient(),
+    private val json: Json = JsonLenient
 ) {
+    private val cookieJar = SimpleCookieJar().apply {
+        // Initialize with session token
+        setCookie(
+            "kagi.com", Cookie.Builder()
+                .name("kagi_session")
+                .value(extractToken(sessionToken))
+                .domain("kagi.com")
+                .build()
+        )
+    }
+
     private val baseHeaders = Headers.Builder()
         .add("origin", "https://kagi.com")
         .add("referer", "https://kagi.com/assistant")
@@ -164,30 +193,28 @@ class AssistantClient(
         )
         .add("accept", "application/vnd.kagi.stream")
         .add("cache-control", "no-cache")
-        .add("cookie", "kagi_session=${extractToken(sessionToken)}")
         .build()
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.SECONDS) // allow indefinite streaming
-        .build()
-
-    private val moshi = Moshi.Builder().build()
-    private val promptAdapter = moshi.adapter(KagiPromptRequest::class.java)
 
     fun getSessionToken(): String {
         return extractToken(sessionToken)
     }
 
-    fun getQrRemoteSession(): Result<QrRemoteSessionDetails> {
-        val request = Request.Builder().url("https://kagi.com/signin").get().build()
+    suspend fun getQrRemoteSession(): Result<QrRemoteSessionDetails> {
+        val request = Request.Builder()
+            .url("https://kagi.com/signin")
+            .get()
+            .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return Result.failure(Exception("Failed to get QR remote session"))
+        val response = okHttpClient.newCall(request).execute()
 
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty body"))
+        return try {
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("Failed to get QR remote session"))
+            }
 
-            // html parse the #qr-code-auth and get attrs "data-token" and "data-csrf"
+            val body = response.body?.string()
+                ?: return Result.failure(Exception("Empty body"))
+
             val doc = Jsoup.parse(body)
 
             val token = doc.selectFirst("#qr-code-auth")?.attr("data-token")
@@ -197,102 +224,106 @@ class AssistantClient(
                 return Result.failure(Exception("Failed to get QR remote session"))
             }
 
-            return Result.success(QrRemoteSessionDetails(csrfToken, token))
+            Result.success(QrRemoteSessionDetails(csrfToken, token))
+        } finally {
+            response.close()
         }
     }
 
-    fun getAccountEmailAddress(): String {
+    suspend fun getAccountEmailAddress(): String {
         val request = Request.Builder()
             .headers(baseHeaders)
-            .url("https://kagi.com/settings/change_email").get().build()
+            .url("https://kagi.com/settings/change_email")
+            .get()
+            .build()
 
-        client.newCall(request).execute().use { response ->
+        return okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return ""
 
             val html = response.body?.string()
-            // html parse the first ._0_pass_field's value attr
             val doc = Jsoup.parse(html ?: return "")
             val element = doc.selectFirst("._0_pass_field")
-            return element?.attr("value") ?: ""
+            element?.attr("value") ?: ""
         }
     }
 
     suspend fun deleteSession(): Boolean {
-        return withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .headers(baseHeaders)
-                .url("https://kagi.com/logout").get().build()
+        val request = Request.Builder()
+            .headers(baseHeaders)
+            .url("https://kagi.com/logout")
+            .get()
+            .build()
 
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
+        return okHttpClient.newCall(request).execute().use { response ->
+            response.isSuccessful
         }
     }
 
-    fun checkQrRemoteSession(details: QrRemoteSessionDetails): Result<String> {
+    suspend fun checkQrRemoteSession(details: QrRemoteSessionDetails): Result<String> {
         val token = details.token
-        val json = "{\"n\":\"$token\"}"
-        val body = json.toRequestBody("application/json".toMediaType())
+        val jsonBody = "{\"n\":\"$token\"}"
+        val body = jsonBody.toRequestBody("application/json".toMediaType())
 
+        val request = Request.Builder()
+            .url("https://kagi.com/login/qr_remote")
+            .post(body)
+            .addHeader("x-csrf-token", details.csrfToken)
+            .build()
 
-        val request = Request.Builder().url("https://kagi.com/login/qr_remote").post(
-            body
-        ).addHeader("x-csrf-token", details.csrfToken).build()
-
-        client.newCall(request).execute().use { response ->
+        okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return Result.failure(Exception("Failed to check QR remote session"))
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty body"))
-            if (body != "OK") return Result.failure(Exception("Not authorized yet"))
+            val responseBody = response.body?.string()
+                ?: return Result.failure(Exception("Empty body"))
+            if (responseBody != "OK") return Result.failure(Exception("Not authorized yet"))
 
-            // if it's ok, we check the Set-Cookie headers (may be more than one) and parse the one with `kagi_session=...`
-            val cookies: List<String> = response.headers.values("Set-Cookie")
-
-            for (cookie in cookies) {
-                if (cookie.startsWith("kagi_session=")) {
-                    val cookieValue = cookie.substringBefore(';').trim()
-                    return Result.success(cookieValue.replace("kagi_session=", ""))
+            // Use CookieJar to get the session cookie
+            val sessionCookie = cookieJar.getCookieValue(request.url, "kagi_session")
+            return if (sessionCookie != null) {
+                Result.success(sessionCookie)
+            } else {
+                // Fallback to manual parsing for Set-Cookie headers
+                val cookies: List<String> = response.headers.values("Set-Cookie")
+                for (cookie in cookies) {
+                    if (cookie.startsWith("kagi_session=")) {
+                        val cookieValue = cookie.substringBefore(';').trim()
+                        return Result.success(cookieValue.replace("kagi_session=", ""))
+                    }
                 }
+                Result.failure(Exception("Failed to extract session cookie"))
             }
         }
-
-        return Result.failure(Exception("Failed to check QR remote session"))
     }
 
-    suspend fun deleteChat(threadId: String, onDone: () -> Unit = {}) {
-        try {
-            this.fetchStream(
+    suspend fun deleteChat(threadId: String): Result<Unit> {
+        return try {
+            fetchStream(
                 streamId = "delete_thread",
                 url = "https://kagi.com/assistant/thread_delete",
                 body = """{"threads":[{"id":"$threadId","title":".", "saved": true, "shared": false, "tag_ids": []}]}""",
-                extraHeaders = mapOf("Content-Type" to "application/json"),
-                onChunk = { chunk ->
-                    if (chunk.done) {
-                        onDone()
-                    }
-                }
-            )
+                extraHeaders = mapOf("Content-Type" to "application/json")
+            ).collect { chunk ->
+                // Just consume the stream
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Result.failure(e)
         }
     }
 
-    fun getKagiCompanions(): List<KagiCompanion> {
+    suspend fun getKagiCompanions(): List<KagiCompanion> {
         val request = Request.Builder()
             .url("https://kagi.com/settings/companions")
             .headers(baseHeaders)
             .get()
             .build()
 
-        client.newCall(request).execute().use { response ->
+        okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return emptyList()
             val body = response.body?.string() ?: return emptyList()
 
             val doc = Jsoup.parse(body)
-
-            // get all the .friends-card
             val cards = doc.select(".friends-card")
 
-            // for each card, construct a KagiCompanion based on the #companion_id.value, h3, and svg
             return cards.map { card ->
                 val companionId =
                     card.selectFirst("input[name='companion_id']")?.attr("value") ?: ""
@@ -302,125 +333,127 @@ class AssistantClient(
                 KagiCompanion(companionId, name, data)
             }
         }
-
     }
 
-    fun checkAuthentication(): Boolean {
+    suspend fun checkAuthentication(): Boolean {
         val request = Request.Builder()
             .url("https://kagi.com/settings/assistant")
             .headers(baseHeaders)
             .get()
             .build()
 
-        client.newCall(request).execute().use { response ->
+        okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return false
             val body = response.body?.string() ?: return false
             return "custom_instructions_input" in body
         }
     }
 
-    suspend fun getProfiles(): List<AssistantProfile> = withContext(Dispatchers.IO) {
-        val streamId = UUID.randomUUID().toString()
-
+    suspend fun getProfiles(): List<AssistantProfile> {
         val profiles = mutableListOf<AssistantProfile>()
 
         fetchStream(
-            streamId = streamId,
+            streamId = UUID.randomUUID().toString(),
             url = "https://kagi.com/assistant/profile_list",
             method = "POST",
             body = "{}",
             extraHeaders = mapOf("Content-Type" to "application/json")
-        ) { chunk ->
+        ).collect { chunk ->
             if (chunk.header == "profiles.json") {
                 val parsed = Json.parseToJsonElement(chunk.data)
                     .jsonObject["profiles"]?.jsonArray
                     ?.map { it.toObject<AssistantProfile>() }
                     .orEmpty()
 
-
                 val (kagi, other) = parsed.partition {
                     it.family.equals("kagi", ignoreCase = true)
                 }
-                profiles += kagi + other
+                profiles.addAll(kagi + other)
             }
         }
 
-        profiles
+        return profiles
     }
 
     suspend fun getThreads(): Map<String, List<AssistantThread>> {
-        val streamId = UUID.randomUUID().toString()
         var threadMap = mutableMapOf<String, MutableList<AssistantThread>>()
 
-        this.fetchStream(
-            streamId = streamId,
+        fetchStream(
+            streamId = UUID.randomUUID().toString(),
             url = "https://kagi.com/assistant/thread_list",
             method = "POST",
-            body = """{}""",
-            extraHeaders = mapOf("Content-Type" to "application/json"),
-            onChunk = { chunk ->
-                if (chunk.header == "thread_list.html") {
-                    val html = "<html><body>${chunk.data}</body></html>"
+            body = "{}",
+            extraHeaders = mapOf("Content-Type" to "application/json")
+        ).collect { chunk ->
+            if (chunk.header == "thread_list.html") {
+                val html = "<html><body>${chunk.data}</body></html>"
 
-                    val doc = Jsoup.parse(html)
+                val doc = Jsoup.parse(html)
 
-                    var currentHeader = "Threads"
-                    for (element in doc.select(".hide-if-no-threads .thread-list-header, .hide-if-no-threads .thread")) {
-                        when {
-                            element.hasClass("thread-list-header") -> currentHeader =
-                                element.text().trim()
+                var currentHeader = "Threads"
+                for (element in doc.select(".hide-if-no-threads .thread-list-header, .hide-if-no-threads .thread")) {
+                    when {
+                        element.hasClass("thread-list-header") -> currentHeader =
+                            element.text().trim()
 
-                            element.hasClass("thread") -> {
-                                val title = element.selectFirst(".title")?.text()?.trim().orEmpty()
-                                val excerpt =
-                                    element.selectFirst(".excerpt")?.text()?.trim().orEmpty()
-                                val id = element.attr("data-code")
-                                val list = threadMap.getOrPut(currentHeader) { mutableListOf() }
-                                list.add(AssistantThread(id, title, excerpt))
-                            }
+                        element.hasClass("thread") -> {
+                            val title = element.selectFirst(".title")?.text()?.trim().orEmpty()
+                            val excerpt = element.selectFirst(".excerpt")?.text()?.trim().orEmpty()
+                            val id = element.attr("data-code")
+                            val list = threadMap.getOrPut(currentHeader) { mutableListOf() }
+                            list.add(AssistantThread(id, title, excerpt))
                         }
                     }
                 }
             }
-        )
+        }
 
         return threadMap
     }
 
-    suspend fun fetchStream(
+    /**
+     * Fetches a streaming response, returning a Flow of StreamChunk.
+     * The flow is collected on the IO dispatcher and can be consumed on any dispatcher.
+     */
+    fun fetchStream(
         streamId: String,
         url: String,
         body: String? = null,
         method: String = "POST",
         extraHeaders: Map<String, String> = emptyMap(),
-        onChunk: suspend (StreamChunk) -> Unit,
-    ) {
-        // Capture the caller's dispatcher BEFORE switching to IO
-        val callerDispatcher = coroutineContext[CoroutineDispatcher] ?: Dispatchers.Main
+    ): Flow<StreamChunk> = flow {
+        val request = buildRequest(url, method, body, extraHeaders)
 
-        withContext(Dispatchers.IO) {
-            doStreamRequest(
-                streamId = streamId,
-                request = buildRequest(url, method, body, extraHeaders),
-                onChunk = { chunk ->
-                    // Dispatch to caller's context for the callback
-                    withContext(callerDispatcher) {
-                        onChunk(chunk)
-                    }
-                },
-            )
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                response.close()
+                throw IOException("HTTP error ${response.code} from ${request.url}")
+            }
+
+            val source = response.body?.source()
+            if (source == null) {
+                response.close()
+                throw IOException("Empty response body from ${request.url}")
+            }
+
+            try {
+                streamLoop(streamId, source).collect { chunk ->
+                    emit(chunk)
+                }
+                emit(StreamChunk(streamId, "", "", true))
+            } finally {
+                response.close()
+            }
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
-
-    suspend fun sendMultipartRequest(
+    fun sendMultipartRequest(
         streamId: String,
         url: String,
         requestBody: KagiPromptRequest,
         files: List<MultipartAssistantPromptFile>,
-        onChunk: suspend (StreamChunk) -> Unit,
-    ) = withContext(Dispatchers.IO) {
-        val stateJson = promptAdapter.toJson(requestBody)
+    ): Flow<StreamChunk> = flow<StreamChunk> {
+        val stateJson = json.encodeToString(KagiPromptRequest.serializer(), requestBody)
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("state", stateJson)
 
@@ -431,9 +464,7 @@ class AssistantClient(
             builder.addFormDataPart(
                 name = "file",
                 filename = file.file.name,
-                body = file.file.asRequestBody(
-                    mediaType
-                )
+                body = file.file.asRequestBody(mediaType)
             )
 
             file.thumbnail?.let {
@@ -451,85 +482,54 @@ class AssistantClient(
             .post(builder.build())
             .build()
 
-        doStreamRequest(streamId, request, onChunk)
-    }
-
-    private suspend fun doStreamRequest(
-        streamId: String,
-        request: Request,
-        onChunk: suspend (StreamChunk) -> Unit,
-    ) = withContext(Dispatchers.IO) {
-        val call = client.newCall(request)
-
-        try {
-            suspendCancellableCoroutine<Unit> { cont ->
-                call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        if (cont.isActive) cont.resumeWithException(e)
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        val source = response.body?.source()
-                        if (!response.isSuccessful || source == null) {
-                            response.close()
-                            cont.resumeWithException(IOException("HTTP error ${response.code} from ${request.url}"))
-                            return
-                        }
-
-                        // Use the current coroutine context instead of creating a new scope
-                        launch(start = CoroutineStart.UNDISPATCHED) {
-                            try {
-                                streamLoop(streamId, source, onChunk)
-                                onChunk(StreamChunk(streamId, "", "", true))
-                                cont.resume(Unit)
-                            } catch (t: Throwable) {
-                                if (cont.isActive) cont.resumeWithException(t)
-                            } finally {
-                                response.close()
-                            }
-                        }
-
-                        cont.invokeOnCancellation {
-                            println("Job $streamId was cancelled")
-                            call.cancel()
-                        }
-                    }
-                })
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                response.close()
+                throw IOException("HTTP error ${response.code} from ${request.url}")
             }
-        } catch (e: Exception) {
-            call.cancel()
-            throw e
+
+            val source = response.body?.source()
+            if (source == null) {
+                response.close()
+                throw IOException("Empty response body from ${request.url}")
+            }
+
+            try {
+                streamLoop(streamId, source).collect { chunk ->
+                    emit(chunk)
+                }
+                emit(StreamChunk(streamId, "", "", true))
+            } finally {
+                response.close()
+            }
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     private suspend fun streamLoop(
         streamId: String,
         source: BufferedSource,
-        onChunk: suspend (StreamChunk) -> Unit,
-    ) {
+    ): Flow<StreamChunk> = flow {
         val nullByte = '\u0000'.code.toByte()
+        val colonByte = ':'.code.toByte()
 
-        try {
-            while (!source.exhausted()) {
-                // Find the null terminator and read the entire chunk at once
-                val terminatorIndex = source.indexOf(nullByte)
-                if (terminatorIndex == -1L) break
+        while (!source.exhausted()) {
+            val terminatorIndex = source.indexOf(nullByte)
+            if (terminatorIndex == -1L) break
 
-                val chunkData = source.readUtf8(terminatorIndex)
-                source.skip(1) // skip the null terminator
+            // Look for the colon within the current chunk only
+            val colonIndex = source.indexOf(colonByte, 0, terminatorIndex)
 
-                // Parse header:body
-                val colonIndex = chunkData.indexOf(':')
-                if (colonIndex == -1) continue
+            if (colonIndex != -1L) {
+                // Read header and body separately without creating a giant intermediate string
+                val header = source.readUtf8(colonIndex).trim()
+                source.skip(1) // skip the colon
+                val body = source.readUtf8(terminatorIndex - colonIndex - 1)
 
-                val header = chunkData.take(colonIndex).trimStart().trim()
-
-                val body = chunkData.substring(colonIndex + 1)
-
-                onChunk(StreamChunk(streamId, header, body, false))
+                emit(StreamChunk(streamId, header, body, false))
+            } else {
+                source.skip(terminatorIndex)
             }
-        } catch (e: Exception) {
-            throw e
+            source.skip(1) // skip the null terminator
         }
     }
 
@@ -544,6 +544,7 @@ class AssistantClient(
             .headers(baseHeaders.newBuilder().apply {
                 extraHeaders.forEach { (k, v) -> set(k, v) }
             }.build())
+            .header("cookie", "kagi_session=${getSessionToken()}")
 
         val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
         when (method.uppercase()) {
@@ -557,6 +558,14 @@ class AssistantClient(
     }
 
     companion object {
+        private fun createDefaultClient(): OkHttpClient {
+            return OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(0, TimeUnit.SECONDS) // allow indefinite streaming
+                .cookieJar(SimpleCookieJar())
+                .build()
+        }
+
         private fun extractToken(raw: String): String =
             raw.substringAfter("token=", raw).substringBefore("&")
     }

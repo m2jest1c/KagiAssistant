@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     kotlin("plugin.serialization") version "1.9.22"
-    id("com.google.devtools.ksp") version "2.0.21-1.0.25" // KSP for Kotlin 2.0
+    id("com.google.devtools.ksp") version "2.0.21-1.0.25"
 }
 
 android {
@@ -48,17 +48,14 @@ android {
 
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.0.0"))
-    // Use OkHttp/Okio compiled against Kotlin 2.0
-    implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.14")
-    implementation("org.jsoup:jsoup:1.18.1")
-    // Moshi and KSP codegen
-    implementation("com.squareup.moshi:moshi:1.15.1")
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation(libs.androidx.material3)
     implementation(libs.androidx.compose.foundation.layout)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.work.runtime.ktx)
-    ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
+    // Use OkHttp/Okio compiled against Kotlin 2.0
+    implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.14")
+    implementation("org.jsoup:jsoup:1.18.1")
+    // Kotlinx Serialization for JSON
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     implementation("androidx.compose.ui:ui-viewbinding:1.6.0")
     implementation("androidx.webkit:webkit:1.8.0")

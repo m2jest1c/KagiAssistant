@@ -2,6 +2,7 @@ package space.httpjames.kagiassistantmaterial.data.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import space.httpjames.kagiassistantmaterial.AssistantClient
 import space.httpjames.kagiassistantmaterial.AssistantThread
@@ -9,7 +10,6 @@ import space.httpjames.kagiassistantmaterial.KagiCompanion
 import space.httpjames.kagiassistantmaterial.QrRemoteSessionDetails
 import space.httpjames.kagiassistantmaterial.StreamChunk
 import space.httpjames.kagiassistantmaterial.ui.message.AssistantProfile
-import java.io.File
 
 /**
  * Repository interface for Kagi Assistant data operations.
@@ -26,17 +26,16 @@ interface AssistantRepository {
 
     // Thread operations
     suspend fun getThreads(): Map<String, List<AssistantThread>>
-    suspend fun deleteChat(threadId: String, onDone: () -> Unit)
+    suspend fun deleteChat(threadId: String): Result<Unit>
 
-    // Message streaming
-    suspend fun fetchStream(
+    // Message streaming - now returns Flow
+    fun fetchStream(
         streamId: String,
         url: String,
         body: String?,
         method: String,
-        extraHeaders: Map<String, String>,
-        onChunk: suspend (StreamChunk) -> Unit
-    )
+        extraHeaders: Map<String, String>
+    ): Flow<StreamChunk>
 
     // Profile operations
     suspend fun getProfiles(): List<AssistantProfile>
@@ -44,14 +43,13 @@ interface AssistantRepository {
     // Companion operations
     suspend fun getKagiCompanions(): List<KagiCompanion>
 
-    // Multipart requests
-    suspend fun sendMultipartRequest(
+    // Multipart requests - now returns Flow
+    fun sendMultipartRequest(
         streamId: String,
         url: String,
         requestBody: space.httpjames.kagiassistantmaterial.KagiPromptRequest,
-        files: List<space.httpjames.kagiassistantmaterial.MultipartAssistantPromptFile>,
-        onChunk: suspend (StreamChunk) -> Unit
-    )
+        files: List<space.httpjames.kagiassistantmaterial.MultipartAssistantPromptFile>
+    ): Flow<StreamChunk>
 
     fun getSessionToken(): String
 }
@@ -64,73 +62,59 @@ class AssistantRepositoryImpl(
     private val assistantClient: AssistantClient
 ) : AssistantRepository {
 
-    override suspend fun checkAuthentication(): Boolean {
-        return withContext(Dispatchers.IO) {
-            assistantClient.checkAuthentication()
-        }
+    override suspend fun checkAuthentication(): Boolean = withContext(Dispatchers.IO) {
+        assistantClient.checkAuthentication()
     }
 
-    override suspend fun getQrRemoteSession(): Result<QrRemoteSessionDetails> {
-        return withContext(Dispatchers.IO) {
-            assistantClient.getQrRemoteSession()
-        }
+    override suspend fun getQrRemoteSession(): Result<QrRemoteSessionDetails> = withContext(Dispatchers.IO) {
+        assistantClient.getQrRemoteSession()
     }
 
-    override suspend fun checkQrRemoteSession(details: QrRemoteSessionDetails): Result<String> {
-        return withContext(Dispatchers.IO) {
-            assistantClient.checkQrRemoteSession(details)
-        }
+    override suspend fun checkQrRemoteSession(details: QrRemoteSessionDetails): Result<String> = withContext(Dispatchers.IO) {
+        assistantClient.checkQrRemoteSession(details)
     }
 
-    override suspend fun deleteSession(): Boolean {
-        return withContext(Dispatchers.IO) {
-            assistantClient.deleteSession()
-        }
+    override suspend fun deleteSession(): Boolean = withContext(Dispatchers.IO) {
+        assistantClient.deleteSession()
     }
 
-    override suspend fun getAccountEmailAddress(): String {
-        return withContext(Dispatchers.IO) {
-            assistantClient.getAccountEmailAddress()
-        }
+    override suspend fun getAccountEmailAddress(): String = withContext(Dispatchers.IO) {
+        assistantClient.getAccountEmailAddress()
     }
 
-    override suspend fun getThreads(): Map<String, List<AssistantThread>> {
-        return assistantClient.getThreads()
+    override suspend fun getThreads(): Map<String, List<AssistantThread>> = withContext(Dispatchers.IO) {
+        assistantClient.getThreads()
     }
 
-    override suspend fun deleteChat(threadId: String, onDone: () -> Unit) {
-        return assistantClient.deleteChat(threadId, onDone)
+    override suspend fun deleteChat(threadId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        assistantClient.deleteChat(threadId)
     }
 
-    override suspend fun fetchStream(
+    override fun fetchStream(
         streamId: String,
         url: String,
         body: String?,
         method: String,
-        extraHeaders: Map<String, String>,
-        onChunk: suspend (StreamChunk) -> Unit
-    ) {
-        return assistantClient.fetchStream(streamId, url, body, method, extraHeaders, onChunk)
+        extraHeaders: Map<String, String>
+    ): Flow<StreamChunk> {
+        return assistantClient.fetchStream(streamId, url, body, method, extraHeaders)
     }
 
-    override suspend fun getProfiles(): List<AssistantProfile> {
-        return assistantClient.getProfiles()
+    override suspend fun getProfiles(): List<AssistantProfile> = withContext(Dispatchers.IO) {
+        assistantClient.getProfiles()
     }
 
-    override suspend fun getKagiCompanions(): List<KagiCompanion> {
-        return withContext(Dispatchers.IO) {
-            assistantClient.getKagiCompanions()
-        }
+    override suspend fun getKagiCompanions(): List<KagiCompanion> = withContext(Dispatchers.IO) {
+        assistantClient.getKagiCompanions()
     }
 
-    override suspend fun sendMultipartRequest(
+    override fun sendMultipartRequest(
         streamId: String,
         url: String,
         requestBody: space.httpjames.kagiassistantmaterial.KagiPromptRequest,
-        files: List<space.httpjames.kagiassistantmaterial.MultipartAssistantPromptFile>,
-        onChunk: suspend (StreamChunk) -> Unit
-    ) {
-        return assistantClient.sendMultipartRequest(streamId, url, requestBody, files, onChunk)
+        files: List<space.httpjames.kagiassistantmaterial.MultipartAssistantPromptFile>
+    ): Flow<StreamChunk> {
+        return assistantClient.sendMultipartRequest(streamId, url, requestBody, files)
     }
 
     override fun getSessionToken(): String {

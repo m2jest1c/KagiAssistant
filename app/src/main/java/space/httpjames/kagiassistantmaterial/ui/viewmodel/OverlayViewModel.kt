@@ -13,7 +13,6 @@ import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.squareup.moshi.Moshi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -219,11 +218,8 @@ class OverlayViewModel(
                 )
             )
 
-            val moshi = Moshi.Builder()
-                .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
-                .build()
-            val jsonAdapter = moshi.adapter(KagiPromptRequest::class.java)
-            val jsonString = jsonAdapter.toJson(requestBody)
+            // Use Kotlinx Serialization to encode request
+            val jsonString = Json.encodeToString(KagiPromptRequest.serializer(), requestBody)
 
             _uiState.update { it.copy(assistantMessageMd = "") }
 
@@ -313,18 +309,16 @@ class OverlayViewModel(
                         streamId = "overlay.id",
                         url = "https://kagi.com/assistant/prompt",
                         requestBody = requestBody,
-                        files = listOf(promptFile),
-                        onChunk = ::onChunk
-                    )
+                        files = listOf(promptFile)
+                    ).collect { chunk -> onChunk(chunk) }
                 } else {
                     assistantClient.fetchStream(
                         streamId = "overlay.id",
                         url = "https://kagi.com/assistant/prompt",
                         method = "POST",
                         body = jsonString,
-                        extraHeaders = mapOf("Content-Type" to "application/json"),
-                        onChunk = ::onChunk
-                    )
+                        extraHeaders = mapOf("Content-Type" to "application/json")
+                    ).collect { chunk -> onChunk(chunk) }
                 }
 
                 _uiState.update {

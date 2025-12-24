@@ -11,7 +11,6 @@ import android.util.Size
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.net.toUri
-import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,7 +45,6 @@ import space.httpjames.kagiassistantmaterial.toObject
 import space.httpjames.kagiassistantmaterial.utils.PreferenceKey
 import space.httpjames.kagiassistantmaterial.utils.DataFetchingState
 import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -137,7 +135,12 @@ class MainViewModel(
     fun deleteChat() {
         viewModelScope.launch {
             val threadId = _threadsState.value.currentThreadId ?: return@launch
-            repository.deleteChat(threadId) { newChat() }
+            val result = repository.deleteChat(threadId)
+            if (result.isSuccess) {
+                newChat()
+            } else {
+                result.exceptionOrNull()?.printStackTrace()
+            }
         }
     }
 
@@ -201,65 +204,64 @@ class MainViewModel(
                     url = "https://kagi.com/assistant/thread_open",
                     method = "POST",
                     body = """{"focus":{"thread_id":"$threadId"}}""",
-                    extraHeaders = mapOf("Content-Type" to "application/json"),
-                    onChunk = { chunk ->
-                        when (chunk.header) {
-                            "thread.json" -> {
-                                val thread = Json.parseToJsonElement(chunk.data)
-                                val title = thread.jsonObject["title"]?.jsonPrimitive?.content
-                                _threadsState.update { it.copy(currentThreadId = threadId) }
-                                _messagesState.update { it.copy(currentThreadTitle = title) }
+                    extraHeaders = mapOf("Content-Type" to "application/json")
+                ).collect { chunk ->
+                    when (chunk.header) {
+                        "thread.json" -> {
+                            val thread = Json.parseToJsonElement(chunk.data)
+                            val title = thread.jsonObject["title"]?.jsonPrimitive?.content
+                            _threadsState.update { it.copy(currentThreadId = threadId) }
+                            _messagesState.update { it.copy(currentThreadTitle = title) }
+                        }
+
+                        "messages.json" -> {
+                            val dtoList = Json.parseToJsonElement(chunk.data)
+                                .toObject<List<MessageDto>>()
+
+                            val messages = dtoList.flatMap { dto ->
+                                val docs = dto.documents.map { d ->
+                                    AssistantThreadMessageDocument(
+                                        id = d.id,
+                                        name = d.name,
+                                        mime = d.mime,
+                                        data = if (d.mime.startsWith("image"))
+                                            d.data?.decodeDataUriToBitmap()
+                                        else null
+                                    )
+                                }
+
+                                val citations = parseReferencesHtml(dto.references_html)
+
+                                listOf(
+                                    AssistantThreadMessage(
+                                        id = dto.id,
+                                        content = dto.prompt,
+                                        role = AssistantThreadMessageRole.USER,
+                                        documents = docs,
+                                        branchIds = dto.branch_list,
+                                        finishedGenerating = true
+                                    ),
+                                    AssistantThreadMessage(
+                                        id = "${dto.id}.reply",
+                                        content = dto.reply,
+                                        role = AssistantThreadMessageRole.ASSISTANT,
+                                        citations = citations,
+                                        branchIds = dto.branch_list,
+                                        finishedGenerating = true,
+                                        markdownContent = dto.md,
+                                        metadata = parseMetadata(dto.metadata)
+                                    )
+                                )
                             }
-
-                            "messages.json" -> {
-                                val dtoList = Json.parseToJsonElement(chunk.data)
-                                    .toObject<List<MessageDto>>()
-
-                                val messages = dtoList.flatMap { dto ->
-                                    val docs = dto.documents.map { d ->
-                                        AssistantThreadMessageDocument(
-                                            id = d.id,
-                                            name = d.name,
-                                            mime = d.mime,
-                                            data = if (d.mime.startsWith("image"))
-                                                d.data?.decodeDataUriToBitmap()
-                                            else null
-                                        )
-                                    }
-
-                                    val citations = parseReferencesHtml(dto.references_html)
-
-                                    listOf(
-                                        AssistantThreadMessage(
-                                            id = dto.id,
-                                            content = dto.prompt,
-                                            role = AssistantThreadMessageRole.USER,
-                                            documents = docs,
-                                            branchIds = dto.branch_list,
-                                            finishedGenerating = true
-                                        ),
-                                        AssistantThreadMessage(
-                                            id = "${dto.id}.reply",
-                                            content = dto.reply,
-                                            role = AssistantThreadMessageRole.ASSISTANT,
-                                            citations = citations,
-                                            branchIds = dto.branch_list,
-                                            finishedGenerating = true,
-                                            markdownContent = dto.md,
-                                            metadata = parseMetadata(dto.metadata)
-                                        )
-                                    )
-                                }
-                                _messagesState.update {
-                                    it.copy(
-                                        messages = messages,
-                                        callState = DataFetchingState.OK
-                                    )
-                                }
+                            _messagesState.update {
+                                it.copy(
+                                    messages = messages,
+                                    callState = DataFetchingState.OK
+                                )
                             }
                         }
                     }
-                )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _messagesState.update { it.copy(callState = DataFetchingState.ERRORED) }
@@ -458,11 +460,8 @@ class MainViewModel(
 
             setEditingMessageId(null)
 
-            val moshi = Moshi.Builder()
-                .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
-                .build()
-            val jsonAdapter = moshi.adapter(KagiPromptRequest::class.java)
-            val jsonString = jsonAdapter.toJson(requestBody)
+            // Use Kotlinx Serialization to encode request
+            val jsonString = Json.encodeToString(KagiPromptRequest.serializer(), requestBody)
 
             fun onChunk(chunk: StreamChunk) {
                 if (chunk.done) {
@@ -599,9 +598,8 @@ class MainViewModel(
                         streamId = streamId,
                         url = url,
                         requestBody = requestBody,
-                        files = files,
-                        onChunk = ::onChunk
-                    )
+                        files = files
+                    ).collect { chunk -> onChunk(chunk) }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -612,9 +610,8 @@ class MainViewModel(
                         url = url,
                         method = "POST",
                         body = jsonString,
-                        extraHeaders = mapOf("Content-Type" to "application/json"),
-                        onChunk = { chunk -> onChunk(chunk) }
-                    )
+                        extraHeaders = mapOf("Content-Type" to "application/json")
+                    ).collect { chunk -> onChunk(chunk) }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
