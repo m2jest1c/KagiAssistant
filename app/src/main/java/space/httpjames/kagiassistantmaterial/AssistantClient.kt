@@ -75,7 +75,8 @@ data class MessageDto(
     val branch_list: List<String> = emptyList(),
     val references_html: String = "",
     val md: String? = null,
-    val metadata: String = ""
+    val metadata: String = "",
+    val status: String = "waiting",
 )
 
 @Serializable
