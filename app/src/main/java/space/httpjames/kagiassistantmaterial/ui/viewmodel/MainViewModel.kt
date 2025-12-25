@@ -558,14 +558,16 @@ class MainViewModel(
 
                         val preparedCitations = parseReferencesHtml(dto.references_html)
 
-                        // Update assistant message with initial content
-                        updateMessageById(newInProgressId) { msg ->
-                            msg.copy(
-                                content = dto.reply,
-                                citations = preparedCitations,
-                                markdownContent = dto.md,
-                                metadata = parseMetadata(dto.metadata)
-                            )
+                        if (dto.status == "done") {
+                            // Update assistant message with final content
+                            updateMessageById(newInProgressId) { msg ->
+                                msg.copy(
+                                    content = dto.reply,
+                                    citations = preparedCitations,
+                                    markdownContent = dto.md,
+                                    metadata = parseMetadata(dto.metadata)
+                                )
+                            }
                         }
 
                         withContext(Dispatchers.Main) {
