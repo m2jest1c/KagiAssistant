@@ -586,7 +586,7 @@ class MainViewModel(
 
                         val preparedCitations = parseReferencesHtml(dto.references_html)
 
-                        if (dto.status == "done") {
+                        if (dto.state == "done") {
                             // Update assistant message with final content
                             updateMessageById(newInProgressId) { msg ->
                                 msg.copy(

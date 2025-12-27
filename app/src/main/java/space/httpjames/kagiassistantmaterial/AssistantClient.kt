@@ -77,7 +77,7 @@ data class MessageDto(
     val references_html: String = "",
     val md: String? = null,
     val metadata: String = "",
-    val status: String = "waiting",
+    val state: String = "waiting",
 )
 
 @Serializable
@@ -379,7 +379,7 @@ class AssistantClient(
             .firstOrNull { it.header == "thread_list.html" }
             ?.let { it.data.parseThreadListHtml() }
     }
-    
+
     /**
      * Performs a streaming HTTP request and returns a Flow of StreamChunk.
      * This helper handles the common streaming lifecycle: request execution,
