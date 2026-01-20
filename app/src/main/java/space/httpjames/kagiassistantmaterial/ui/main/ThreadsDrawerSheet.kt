@@ -199,15 +199,16 @@ private fun ThreadList(
                             modifier = Modifier.padding(vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            ) {
                                 Text(
                                     text = thread.title,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     text = thread.excerpt,
